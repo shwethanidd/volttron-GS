@@ -10,6 +10,7 @@ _log = logging.getLogger(__name__)
 utils.setup_logging()
 
 
+<<<<<<< HEAD
 # class Light(object):
 #     DOL = "dol"
 #     OCC = "occ"
@@ -23,6 +24,22 @@ utils.setup_logging()
 #     def get_q(self, _set, sched_index, market_index, occupied):
 #         q = self.model.predict(_set, sched_index, market_index, occupied)
 #         return q
+=======
+class Light(object):
+    DOL = "dol"
+    OCC = "occ"
+
+    def __init__(self, config, **kwargs):
+        model_type = config.get("model_type", "simple")
+        _log.debug("Light Agent Model: {}".format(model_type))
+        module = importlib.import_module("volttron.pnnl.models.light")
+        model_class = getattr(module, model_type)
+        self.model = model_class(config, self)
+
+    def get_q(self, _set, sched_index, market_index, occupied):
+        q = self.model.predict(_set, sched_index, market_index, occupied)
+        return q
+>>>>>>> d2476c7fe2aa98f0b9b80fc17c6ae8a4d412ceaa
 
 
 class simple(object):
@@ -31,7 +48,10 @@ class simple(object):
     def __init__(self, config, parent, **kwargs):
         self.parent = parent
         self.inputs = parent.inputs
-        self.rated_power = config["rated_power"]
+        if "rated_power" in config: 
+           self.rated_power = config["rated_power"]
+        else:
+           self.rated_power = config["model_parameters"]["rated_power"]
 
     def update_data(self):
         pass

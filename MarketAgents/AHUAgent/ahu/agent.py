@@ -88,8 +88,8 @@ class AHUAgent(Aggregator, Model):
             config = utils.load_config(config_path)
         except Exception.StandardError:
             config = {}
+        model_config = config.get("model_parameters")
         self.agent_name = config.get("agent_name", "ahu")
-        model_config = config.get("model_parameters", {})
         Aggregator.__init__(self, config, **kwargs)
         Model.__init__(self, model_config, **kwargs)
 
@@ -100,6 +100,7 @@ class AHUAgent(Aggregator, Model):
         coil_load_demand_curve = PolyLine()
         oat = self.oat_predictions[index] if self.oat_predictions else None
         for point in air_demand.points:
+<<<<<<< HEAD
             self.model.input_zone_load(point.x)
             electric_demand_curve.add(Point(price=point.y, quantity=self.model.calculate_electric_load()))
             coil_load_demand_curve.add(Point(price=point.y, quantity=self.model.calculate_coil_load(oat)))
@@ -107,7 +108,6 @@ class AHUAgent(Aggregator, Model):
         # Hard-coding the market names is not ideal.  Need to come up with more robust solution
         self.consumer_demand_curve["electric"][index] = electric_demand_curve
         self.consumer_demand_curve["chilled_water"][index] = coil_load_demand_curve
-
 
 def main():
     """Main method called to start the agent."""

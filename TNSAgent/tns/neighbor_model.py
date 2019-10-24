@@ -623,8 +623,10 @@ class NeighborModel(Model, object):
         # prevents time intervals from accumulating indefinitely.
         self.activeVertices = [x for x in self.activeVertices if x.timeInterval.startTime in time_interval_values]
 
-        # Index through active time intervals
         for i in range(len(time_intervals)):
+            # Flag for logging demand charge 1st time only
+            dc_logged = False
+
             # Keep active vertices that are not in the indexed time interval, but
             # discard the one(s) in the indexed time interval. These shall be
             # recreated in this iteration.
@@ -677,7 +679,7 @@ class NeighborModel(Model, object):
                         # vertices.
                         # self.activeVertices = [self.activeVertices, interval_value]  # IntervalValue objects
                         self.activeVertices.append(interval_value)
-                else:
+                else:  # at least 1 vertex received
                     # One or more transactive records have been received
                     # concerning the indexed time interval. Use these to
                     # re-create active Vertices.
@@ -727,13 +729,6 @@ class NeighborModel(Model, object):
                     # Index through the vertices in the received transactive
                     # records for the indexed time interval.
                     for k in range(len(received_vertices)):
-                        # If there are multiple transactive records in the
-                        # indexed time interval, we don't need to create a vertex
-                        # for Record #0. Record #0 is the balance point, which
-                        # must lie on existing segments of the supply or demand curve.
-                        if len(received_vertices) >= 3 and received_vertices[k].record == 0:
-                            continue  # jumps out of for loop to next iteration
-
                         # Create working values of power and marginal price from
                         # the received vertices.
                         power = received_vertices[k].power
@@ -752,17 +747,30 @@ class NeighborModel(Model, object):
                                 power = power / factor2
                                 marginal_price = marginal_price * factor2
 
-                                if self.mtn is not None and self.system_loss_topic != '':
+                                if (self.mtn is not None
+                                    and self.system_loss_topic != ''
+                                    and received_vertices[k].record == 0):
                                     msg = {
                                         'ts': received_vertices[k].timeInterval,
-                                        'power': power,
+                                        'predicted_clear_power': power,
                                         'max_power': self.object.maximumPower,
                                         'factor1': factor1,
-                                        'factor2': factor2
+                                        'factor2': factor2,
+                                        'vertex_record': received_vertices[k].record,
+                                        'demand_charge_threshold': demand_charge_threshold
                                     }
                                     self.mtn.vip.pubsub.publish(peer='pubsub',
                                                                 topic=self.system_loss_topic,
                                                                 message=msg)
+
+                                # If there are multiple transactive records in the
+                                # indexed time interval, we don't need to create a vertex
+                                # for Record #0. Record #0 is the balance point, which
+                                # must lie on existing segments of the supply or demand curve.
+                                # This is moved here instead of staying at the beginning of the loop
+                                # is because we want to log system loss
+                                if len(received_vertices) >= 3 and received_vertices[k].record == 0:
+                                    continue  # jumps out of for loop to next iteration
 
                                 if power > demand_charge_threshold:
                                     # The power is greater than the anticipated
@@ -770,10 +778,23 @@ class NeighborModel(Model, object):
                                     # Set a flag.
                                     demand_charge_flag = k
 
-                                if demand_charge_flag:
-                                    _log.debug("DEMAND CHARGE")
-                                else:
-                                    _log.debug("NO DEMAND CHARGE")
+                                # Publish to db
+                                if self.mtn is not None and self.dc_threshold_topic != '' \
+                                        and k == len(received_vertices)-1:
+                                    dc_flag = "has demand charge"
+                                    if not demand_charge_flag:
+                                        dc_flag = "no demand charge"
+                                    dc_msg = {
+                                        'ts': received_vertices[k].timeInterval,
+                                        'dc_flag': dc_flag,
+                                        'demand_charge_threshold': demand_charge_threshold,
+                                        'predicted_power_peak': predicted_prior_peak,
+                                        'max_predicted_power': power
+                                    }
+                                    self.mtn.vip.pubsub.publish(peer='pubsub',
+                                                                topic=self.dc_threshold_topic,
+                                                                message=dc_msg)
+
                                 # Debug negative price & demand charge
                                 _log.debug("power: {} - demand charge threshold: {} - predicted power peak: {}"
                                            .format(power, demand_charge_threshold, predicted_prior_peak))
