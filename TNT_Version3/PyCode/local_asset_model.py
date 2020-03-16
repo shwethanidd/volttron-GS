@@ -56,12 +56,8 @@
 
 # }}}
 
-# import logging
-# TODO: Reenable logging and Volttron throughout local_asset_model.py
-
-"""  # LOOK: These lines commented out in absence of Volttron environment
+import logging
 from volttron.platform.agent import utils
-"""
 
 from vertex import Vertex
 from interval_value import IntervalValue
@@ -71,10 +67,10 @@ from helpers import *
 from time_interval import TimeInterval
 from timer import Timer
 
-"""   # LOOK: These lines commented out in absence of Volttron Environment
+
 utils.setup_logging()
 _log = logging.getLogger(__name__)
-"""
+
 # 191218DJH: This class originally inherited from class Model. Model is being deleted. Its properties and methods are
 # being moved into this class.
 

@@ -58,12 +58,13 @@
 import os
 import sys
 import logging
-from datetime import datetime
-# from dateutil import parser
+from datetime import datetime, timedelta
+from dateutil import parser
+import gevent
 
-# from volttron.platform.vip.agent import Agent, Core, PubSub, RPC, compat
-# from volttron.platform.agent import utils
-# from volttron.platform.agent.utils import (get_aware_utc_now, format_timestamp)
+from volttron.platform.vip.agent import Agent, Core, PubSub, RPC, compat
+from volttron.platform.agent import utils
+from volttron.platform.agent.utils import (get_aware_utc_now, format_timestamp)
 
 from helpers import *
 from measurement_type import MeasurementType
@@ -78,25 +79,23 @@ from temperature_forecast_model import TemperatureForecastModel
 # from solar_pv_resource import SolarPvResource
 # from solar_pv_resource_model import SolarPvResourceModel
 from openloop_richland_load_predictor import OpenLoopRichlandLoadPredictor
-from bulk_supplier_dc import BulkSupplier_dc
+from .bulk_supplier_dc import BulkSupplier_dc
 # from transactive_record import TransactiveRecord
-from vertex import Vertex
-from timer import Timer
-
+from .vertex import Vertex
+from .timer import Timer
 
 # utils.setup_logging()
 _log = logging.getLogger(__name__)
 __version__ = '0.1'
 
 
-# class CityAgent(Agent, TransactiveNode):
-class CityAgent(TransactiveNode):
+class CityAgent(Agent, TransactiveNode):
     def __init__(self, config_path, **kwargs):
-        # Agent.__init__(self, **kwargs)
+        Agent.__init__(self, **kwargs)
         TransactiveNode.__init__(self)
 
-        self.config_path = config_path
-        # self.config = utils.load_config(config_path)
+        # self.config_path = config_path
+        self.config = utils.load_config(config_path)
         self.name = self.config.get('name')
         self.market_cycle_in_min = int(self.config.get('market_cycle_in_min', 60))
         self.duality_gap_threshold = float(self.config.get('duality_gap_threshold', 0.01))
@@ -123,6 +122,7 @@ class CityAgent(TransactiveNode):
         Timer.simulation = self.simulation
         Timer.sim_start_time = self.simulation_start_time
         Timer.sim_one_hr_in_sec = self.simulation_one_hour_in_seconds
+        self._stop_agent = False
 
     def get_exp_start_time(self):
         one_second = timedelta(seconds=1)
@@ -135,7 +135,7 @@ class CityAgent(TransactiveNode):
             if next_exp_time.hour == now.hour:
                 next_exp_time = now + one_second
             else:
-                # _log.debug("{} did not run onstart because it's too late. Wait for next hour.".format(self.name))
+                _log.debug("{} did not run onstart because it's too late. Wait for next hour.".format(self.name))
                 next_exp_time = next_exp_time.replace(minute=0, second=0, microsecond=0)
         return next_exp_time
 
@@ -155,7 +155,6 @@ class CityAgent(TransactiveNode):
 
         return next_exp_time, next_analysis_time
 
-    '''
     @Core.receiver('onstart')
     def onstart(self, sender, **kwargs):
         # Add other objects: assets, services, neighbors
@@ -172,15 +171,16 @@ class CityAgent(TransactiveNode):
         if self.simulation:
             next_analysis_time = self.simulation_start_time
 
-        # _log.debug("{} schedule to run at exp_time: {} analysis_time: {}".format(self.name,
+        _log.debug("{} schedule to run at exp_time: {} analysis_time: {}".format(self.name,
                                                                                  next_exp_time,
                                                                                  next_analysis_time))
-        self.core.schedule(next_exp_time, self.schedule_run,
-                           format_timestamp(next_exp_time),
-                           format_timestamp(next_analysis_time), True)
-                            '''
+        # self.core.schedule(next_exp_time, self.schedule_run,
+        #                    format_timestamp(next_exp_time),
+        #                    format_timestamp(next_analysis_time), True)
 
-    '''
+        # SN: Added for new state machine based TNT implementation
+        self.core.spawn_later(5, self.state_machine_loop)
+
     def schedule_run(self, cur_exp_time, cur_analysis_time, start_of_cycle=False):
         # 191218DJH: The logic in this section should be REPLACED by the new market state machine. See method go().
         """
@@ -189,10 +189,11 @@ class CityAgent(TransactiveNode):
         """
         # Balance
         market = self.markets[0]  # Assume only 1 TNS market per node
-        market.balance(self)
-        self.campus.prep_transactive_signal(market, self)
-        self.campus.send_transactive_signal(self, self.city_supply_topic,
-                                                  start_of_cycle=start_of_cycle)
+        # market.balance(self)
+        # market.events(self)
+        # self.campus.prep_transactive_signal(market, self)
+        # self.campus.send_transactive_signal(self, self.city_supply_topic,
+        #                                    start_of_cycle=start_of_cycle)
 
         # Schedule to run next hour with start_of_cycle = True
         cur_exp_time = parser.parse(cur_exp_time)
@@ -202,19 +203,20 @@ class CityAgent(TransactiveNode):
                            format_timestamp(next_exp_time),
                            format_timestamp(next_analysis_time),
                            start_of_cycle=True)
-                            '''
 
     # This appears to be the method by which the city receives transactive records from the campus. That's fine, but the
     # timing logic (i.e., "self.balance_market(1)") is ill advised and should be deferred to the market state machine.
     def new_demand_signal(self, peer, sender, bus, topic, headers, message):
         _log.debug("At {}, {} receives new demand records: {}".format(Timer.get_cur_time(), self.name, message))
         demand_curves = message['curves']
-
+        # SN: Added for new TNT state machine based implementation
+        self.campus.receivedCurves = demand_curves
         # Should not do anything with start_of_cycle signal
-        self.campus.receive_transactive_signal(self, demand_curves)  # atm, only one campus
+        # self.campus.receive_transactive_signal(self, demand_curves)  # atm, only one campus
 
         # 191219DJH: This logic should be deferred to the new market state machine, please.
         # self.balance_market(1)
+        # self.markets[0].events(self)
 
 
     '''
@@ -283,7 +285,10 @@ class CityAgent(TransactiveNode):
         # campus.demandThreshold = 0.8 * campus.maximumPower
         campus.transactive = True
         campus.upOrDown = 'downstream'
-        self.neighbors.append(self.campus)          # Why is "self" used in this instance??
+        # SN: Added to integrate new state machine logic with VOLTTRON
+        # This topic will be used to send transactive signal to neighbor
+        campus.publishTopic = self.city_supply_topic
+        self.neighbors.append(campus)
         return campus
 
     def make_supplier(self):
@@ -305,8 +310,8 @@ class CityAgent(TransactiveNode):
         supplier.upOrDown = 'upstream'
 
         supplier.inject(self,
-                             system_loss_topic=self.system_loss_topic,
-                             dc_threshold_topic=self.dc_threshold_topic)
+                        system_loss_topic=self.system_loss_topic,
+                        dc_threshold_topic=self.dc_threshold_topic)
 
         # Add vertices
         # The first default vertex is, for now, based on the flat COR rate to PNNL. The second vertex includes 2 losses
@@ -349,15 +354,15 @@ class CityAgent(TransactiveNode):
 
         return supplier
 
-    def go(self):
+    def state_machine_loop(self):
         # 191218DJH: This is the entire timing logic. It relies on current market object's state machine method events()
         import time
-        while True:  # a condition may be added to provide stops or pauses.
+        while not self._stop_agent:  # a condition may be added to provide stops or pauses.
             for i in range(len(self.markets)):
                 self.markets[i].events(self)
                 # NOTE: A delay may be added, but the logic of the market(s) alone should be adequate to drive system
                 # activities
-                time.sleep(1)
+                gevent.time.sleep(1)
 
     def make_day_ahead_market(self):
         # 191219DJH: It will be important that different agents' markets are similarly, if not identically,
@@ -432,11 +437,11 @@ class CityAgent(TransactiveNode):
         # *************************************************************************
         # 191218DJH: There are no longer separate LocalAsset object and model classes.
         inelastic_load = OpenLoopRichlandLoadPredictor(weather_service,
-                            default_power=-100420,
-                            description='Correlation model of bulk inelastic city load',
-                            maximum_power=-50000,
-                            minimum_power=-200000,
-                            name='InelasticCityLoad')  # A child of class LocalAsset
+                                                       default_power=-100420,
+                                                       description='Correlation model of bulk inelastic city load',
+                                                       maximum_power=-50000,
+                                                       minimum_power=-200000,
+                                                       name='InelasticCityLoad')  # A child of class LocalAsset
 
         inelastic_load.temperature_forecaster = weather_service
         inelastic_load.default_vertices = [Vertex(float("inf"), 0.0, -100420.0)]
@@ -448,25 +453,26 @@ class CityAgent(TransactiveNode):
 
     def make_cor_meter(self):
         meter = MeterPoint(
-                measurement_type=MeasurementType.PowerReal,
-                measurement_unit=MeasurementUnit.kWh,
-                name='CoRElectricMeter')
+            measurement_type=MeasurementType.PowerReal,
+            measurement_unit=MeasurementUnit.kWh,
+            name='CoRElectricMeter')
 
         self.meterPoints.append(meter)
 
         return meter
 
+    @Core.receiver('onstop')
+    def onstop(self, sender, **kwargs):
+        self._stop_agent = True
+
 # TODO: Reenable logging and volttron functionality in new_city_agent.py
-'''
 def main(argv=sys.argv):
     try:
         utils.vip_main(CityAgent)
     except Exception as e:
-        # _log.exception('unhandled exception')
-'''
+        _log.exception('unhandled exception')
 
 
 if __name__ == '__main__':
-    pass
     # Entry point for script
-    # sys.exit(main())
+    sys.exit(main())

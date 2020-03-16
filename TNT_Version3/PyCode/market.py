@@ -57,12 +57,11 @@
 # }}}
 
 
-# import gevent  # Comment out if Volttron environment is available
-# import logging  # Comment out if Volttron environment is available
-# TODO: Reenable logging throughout Market
+import gevent
+import logging
+from datetime import timedelta
 
-# from volttron.platform.agent import utils  # Comment out if Volttron environment is available
-# TODO: Reenable volttrom import in Market
+from volttron.platform.agent import utils
 
 from vertex import Vertex
 from helpers import *
@@ -79,14 +78,14 @@ from warnings import warn
 from matplotlib import pyplot as plt
 
 
-# utils.setup_logging()
-# _log = logging.getLogger(__name__)
+utils.setup_logging()
+_log = logging.getLogger(__name__)
 
 
 class Market:
     # Market Base Class
-    # At least one Market must exist (see the firstMarket object) to drive the timing with which new TimeIntervals are
-    # created.
+    # At least one Market must exist (see the firstMarket object) to drive the timing
+    # with which new TimeIntervals are created.
 
     def __init__(self,
                     activation_lead_time=timedelta(hours=0),
@@ -118,7 +117,7 @@ class Market:
         self.deliveryLeadTime = delivery_lead_time          # [timedelta] Time in market state "DeliveryLead"
         self.dualityGapThreshold = duality_gap_threshold    # [dimensionless]; 0.01 = 1%
         self.futureHorizon = future_horizon                 # Future functionality: future of price-discovery relevance
-        self.initialMarketState = initial_market_state      # [MarektState] New market's initial state
+        self.initialMarketState = initial_market_state      # [MarketState] New market's initial state
         self.intervalDuration = interval_duration           # [timedelta] Duration of this market's time intervals
         self.intervalsToClear = intervals_to_clear          # [int] Market intervals to be cleared by this market object
         self.marketClearingInterval = market_clearing_interval  # [timedelta] Time between successive market clearings
@@ -328,7 +327,7 @@ class Market:
                 self.transition_from_delivery_to_reconcile(my_transactive_node)
 
         # EVENT 6A: ACTIONS WHILE IN MARKET STATE RECONCILE ************************************************************
-        # These are the actions while in the "DeliveryLead" market state.
+        # These are the actions while in the "Reconcile" market state.
 
         if self.marketState == MarketState.Reconcile:
 
@@ -751,8 +750,8 @@ class Market:
         if self.method == Method.Interpolation:
             self.assign_system_vertices(my_transactive_node)
             # TODO: Un-comment this next debug code.
-            # av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in self.activeVertices]
-            # _log.debug("{} market active vertices are: {}".format(self.name, av))
+            av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in self.activeVertices]
+            _log.debug("{} market active vertices are: {}".format(self.name, av))
 
         # Index through active time intervals.
         for i in range(len(time_intervals)):
@@ -822,14 +821,14 @@ class Market:
                     #       interpreted for each asset and neighbor.
 
                 except RuntimeWarning as warning:
-                    warn('No balance point was found in ' + format(time_intervals[i].name) + warning)
-                    """
+                    _log.warning('No balance point was found in ' + format(time_intervals[i].name) + warning)
+
                     _log.error(err_msg)
-                    _log.error("{} failed to find balance point. "
-                               "Market active vertices: {}".format(mtn.name,
-                                                                   [(tis[i].name, x.marginalPrice, x.power)
-                                                                    for x in av]))
-                    """
+                    # _log.error("{} failed to find balance point. "
+                    #            "Market active vertices: {}".format(mtn.name,
+                    #                                                [(tis[i].name, x.marginalPrice, x.power)
+                    #                                                 for x in av]))
+
 
                     self.converged = False
                     return

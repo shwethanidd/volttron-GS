@@ -59,6 +59,7 @@ import logging
 import datetime
 import gevent
 from dateutil import parser
+from datetime import timedelta
 import uuid
 
 from volttron.platform.vip.agent import Agent, Core, PubSub, RPC, compat
@@ -181,6 +182,7 @@ class BuildingAgent(MarketAgent, TransactiveNode):
             #         self.ep_lines.append(line)
 
         _log2.debug("Mixmarket for agent {}:".format(self.name))
+        self._stop_agent = False
 
     @Core.receiver('onstart')
     def onstart(self, sender, **kwargs):
@@ -200,8 +202,11 @@ class BuildingAgent(MarketAgent, TransactiveNode):
                                   prefix=self.power_topic,
                                   callback=self.new_demand_signal)
 
+        # SN: Added for new state machine based TNT implementation
+        self.core.spawn_later(5, self.state_machine_loop)
+
     # 191219DJH: This appears to mostly drive the mixed market. Consider whether any of this functionality will fight
-    #            with the new market state machine, which should now dircect all timing in the transactive network.
+    #            with the new market state machine, which should now direct all timing in the transactive network.
     def new_supply_signal(self, peer, sender, bus, topic, headers, message):
         _log.debug("At {}, {} receives new supply records: {}".format(Timer.get_cur_time(),
                                                                      self.name, message))
@@ -209,7 +214,9 @@ class BuildingAgent(MarketAgent, TransactiveNode):
         start_of_cycle = message['start_of_cycle']
 
         # 191219DJH: CAUTION: This next logic might be replaced by the market state machine (?)
-        self.campus.receive_transactive_signal(self, supply_curves)
+        # self.campus.receive_transactive_signal(self, supply_curves)
+        # SN: Added for new state machine based TNT implementation
+        self.campus.receivedCurves = supply_curves
         _log.debug("At {}, mixmarket state is {}, start_of_cycle {}".format(Timer.get_cur_time(),
                                                                             self.mix_market_running,
                                                                             start_of_cycle))
@@ -276,7 +283,7 @@ class BuildingAgent(MarketAgent, TransactiveNode):
         # Balance market with previous known demands
         market = self.markets[0]  # Assume only 1 TNS market per node
         market.signal_new_data = True
-        market.balance(self)
+        #market.balance(self)
 
         # Check if now is near the end of the hour, applicable only if not in simulation mode
         now = Timer.get_cur_time()
@@ -322,53 +329,30 @@ class BuildingAgent(MarketAgent, TransactiveNode):
     #            process. The network markets should all be driven by the new market state machine hereafter, so the
     #            network actions should be stripped from this method. There will be many markets in the network, not
     #            simply "market" as done here. The building should have been handled entirely as a local asset.
+    '''
     def balance_market(self, run_cnt):
-        market = self.markets[0]  # Assume only 1 TNS market per node
-        market.new_data_signal = True
-        market.balance(self)
+    market = self.markets[0]  # Assume only 1 TNS market per node
+    market.new_data_signal = True
+    # market.balance(self)
+    # market.events(self)
 
-        if market.converged:
-            _log.debug("TNS market {} balanced successfully.".format(market.name))
-            balanced_curves = [(x.timeInterval.startTime,
-                                x.value.marginalPrice,
-                                x.value.power) for x in market.activeVertices]
-            _log.debug("Balanced curves: {}".format(balanced_curves))
+    if market.converged:
+        _log.debug("TNS market {} balanced successfully.".format(market.name))
+        balanced_curves = [(x.timeInterval.startTime,
+                            x.value.marginalPrice,
+                            x.value.power) for x in market.activeVertices]
+        _log.debug("Balanced curves: {}".format(balanced_curves))
 
-            # Sum all the powers as will be needed by the net supply/demand curve.
-            market.assign_system_vertices(self)
+        # Sum all the powers as will be needed by the net supply/demand curve.
+        market.assign_system_vertices(self)
 
-            # Check to see if it is ok to send signals
-            self.campus.check_for_convergence(market)
-            if not self.campus.converged:
-                _log.debug("Campus model not converged. Sending signal back to campus.")
-                self.campus.prep_transactive_signal(market, self)
-                self.campus.send_transactive_signal(self, self.building_demand_topic)
-
-    def offer_callback(self, timestamp, market_name, buyer_seller):
-        if market_name in self.market_names:
-            # Get the price for the corresponding market
-            idx = int(market_name.split('_')[-1])
-            price = self.prices[idx+1]
-            #price *= 1000.  # Convert to mWh to be compatible with the mixmarket
-
-            # Quantity
-            min_quantity = 0
-            max_quantity = 10000  # float("inf")
-
-            # Create supply curve
-            supply_curve = PolyLine()
-            supply_curve.add(Point(quantity=min_quantity, price=price))
-            supply_curve.add(Point(quantity=max_quantity, price=price))
-
-            # Make offer
-            _log.debug("{}: offer for {} as {} at {} - Curve: {} {}".format(self.agent_name,
-                                                                        market_name,
-                                                                        SELLER,
-                                                                        timestamp,
-                                                                        supply_curve.points[0],
-                                                                        supply_curve.points[1]))
-            success, message = self.make_offer(market_name, SELLER, supply_curve)
-            _log.debug("{}: offer has {} - Message: {}".format(self.agent_name, success, message))
+        # Check to see if it is ok to send signals
+        self.campus.check_for_convergence(market)
+        if not self.campus.converged:
+            _log.debug("Campus model not converged. Sending signal back to campus.")
+            self.campus.prep_transactive_signal(market, self)
+            self.campus.send_transactive_signal(self, self.building_demand_topic)
+    '''
 
     def init_objects(self):
 
@@ -384,199 +368,6 @@ class BuildingAgent(MarketAgent, TransactiveNode):
 
         # Campus neighbor object
         self.campus = self.make_campus_neighbor()
-
-    # Dummy callbacks
-    def aggregate_power(self, peer, sender, bus, topic, headers, message):
-        _log.debug("{}: received topic for power aggregation: {}".format(self.agent_name,
-                                                                         topic))
-        data = message[0]
-        _log.debug("{}: updating power aggregation: {}".format(self.agent_name,
-                                                               data))
-
-    def reservation_callback(self, timestamp, market_name, buyer_seller):
-        _log.debug("{}: wants reservation for {} as {} at {}".format(self.agent_name,
-                                                                           market_name,
-                                                                           buyer_seller,
-                                                                           timestamp))
-        return True
-
-    def aggregate_callback(self, timestamp, market_name, buyer_seller, aggregate_demand):
-        if buyer_seller == BUYER and market_name in self.market_names:  # self.base_market_name in market_name:
-            _log.debug("{}: at ts {} min of aggregate curve : {}".format(self.agent_name,
-                                                                         timestamp,
-                                                                         aggregate_demand.points[0]))
-            _log.debug("{}: at ts {} max of aggregate curve : {}".format(self.agent_name,
-                                                                         timestamp,
-                                                                         aggregate_demand.points[- 1]))
-            _log.debug("At {}: Report aggregate Market: {} buyer Curve: {}".format(Timer.get_cur_time(),
-                                                                                   market_name,
-                                                                                   aggregate_demand))
-            idx = int(market_name.split('_')[-1])
-            idx += 1  # quantity has 25 values while there are 24 future markets
-            self.building_demand_curves[idx] = (aggregate_demand.points[0], aggregate_demand.points[-1])
-
-    def price_callback(self, timestamp, market_name, buyer_seller, price, quantity):
-        _log.debug("{}: cleared price ({}, {}) for {} as {} at {}".format(Timer.get_cur_time(),
-                                                                          price,
-                                                                          quantity,
-                                                                          market_name,
-                                                                          buyer_seller,
-                                                                          timestamp))
-        idx = int(market_name.split('_')[-1])
-        self.prices[idx+1] = price  # price has 24 values, current hour price is excluded
-        if price is None:
-            raise "Market {} did not clear. Price is none.".format(market_name)
-        idx += 1  # quantity has 25 values while there are 24 future markets
-        if self.quantities[idx] is None:
-            self.quantities[idx] = 0.
-        if quantity is None:
-            _log.error("Quantity is None. Set it to 0. Details below.")
-            _log.debug("{}: ({}, {}) for {} as {} at {}".format(self.agent_name,
-                                                                price,
-                                                                quantity,
-                                                                market_name,
-                                                                buyer_seller,
-                                                                timestamp))
-            quantity = 0
-        self.quantities[idx] += quantity
-
-        _log.debug("At {}, Quantity is {} and quantities are: {}".format(Timer.get_cur_time(),
-                                                                         quantity,
-                                                                         self.quantities))
-        if quantity is not None and quantity < 0:
-            _log.error("Quantity received from mixmarket is negative!!! {}".format(quantity))
-
-        # If all markets (ie. exclude 1st value) are done then update demands, otherwise do nothing
-        mix_market_done = all([False if q is None else True for q in self.quantities[1:]])
-        if mix_market_done:
-            # Check if any quantity is greater than physical limit of the supply wire
-            _log.debug("Quantity: {}".format(self.quantities))
-            if not all([False if q > self.max_deliver_capacity else True for q in self.quantities[1:]]):
-                _log.error("One of quantity is greater than "
-                           "physical limit {}".format(self.max_deliver_capacity))
-
-            # Check demand curves exist
-            all_curves_exist = all([False if q is None else True for q in self.building_demand_curves[1:]])
-            if not all_curves_exist:
-                _log.error("Demand curves: {}".format(self.building_demand_curves))
-                raise "Mix market has all quantities but not all demand curves"
-
-            # Update demand and balance market
-            self.mix_market_running = False
-            #self.elastive_load_model.default_powers = [-q if q is not None else None for q in self.quantities]
-            curves_arr = [(c[0].tuppleize(), c[1].tuppleize()) if c is not None else None
-                          for c in self.building_demand_curves]
-            _log2.debug("Data at time {}:".format(Timer.get_cur_time()))
-            _log2.debug("Market intervals: {}".format([x.name for x in self.markets[0].timeIntervals]))
-            _log2.debug("Quantities: {}".format(self.quantities))
-            _log2.debug("Prices: {}".format(self.prices))
-            _log2.debug("Curves: {}".format(curves_arr))
-
-            db_topic = "/".join([self.db_topic, self.name, "AggregateDemand"])
-            message = {"Timestamp": format_timestamp(timestamp), "Curves": self.building_demand_curves}
-            headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
-            self.vip.pubsub.publish("pubsub", db_topic, headers, message).get()
-
-            db_topic = "/".join([self.db_topic, self.name, "Price"])
-            price_message = []
-            for i in range(len(self.markets[0].timeIntervals)):
-                ts = self.markets[0].timeIntervals[i].name
-                price = self.prices[i]
-                quantity = self.quantities[i]
-                price_message.append({'timeInterval': ts, 'price': price, 'quantity': quantity})
-            message = {"Timestamp": format_timestamp(timestamp), "Price": price_message}
-            headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
-            self.vip.pubsub.publish("pubsub", db_topic, headers, message).get()
-
-            self.elastive_load_model.set_tcc_curves(self.quantities,
-                                                    self.prices,
-                                                    self.building_demand_curves)
-            self.balance_market(1)
-
-    def run_ep_sim(self, start_of_cycle):
-        # Reset price array
-        self.prices = [None for i in range(25)]
-
-        # Save the 1st quantity as prior 2nd quantity
-        cur_quantity = self.quantities[1]
-        cur_curve = self.building_demand_curves[1]
-
-        # Reset quantities and curves
-        self.quantities = [None for i in range(25)]
-        self.building_demand_curves = [None for i in range(25)]
-
-        # If new cycle, set the 1st quantity to the corresponding quantity of previous hour
-        if start_of_cycle:
-            self.quantities[0] = cur_quantity
-            self.building_demand_curves[0] = cur_curve
-
-        # Balance market with previous known demands
-        # 191219DJH: The assumption of 1 TNS market per node will no longer be valid.
-        #            ***** This logic should be driven by the market state machines *****
-        #            I honestly can't tell where TNS ends and mixed market starts in this method code.
-        market = self.markets[0]  # Assume only 1 TNS market per node
-        market.signal_new_data = True
-        market.balance(self)
-
-        # Check if now is near the end of the hour, applicable only if not in simulation mode
-        now = Timer.get_cur_time()
-        near_end_of_hour = False
-        if not self.simulation:
-            near_end_of_hour = self.near_end_of_hour(now)
-
-        if market.converged:
-            # Get new prices (expected 25 values: current hour + next 24)
-            prices = market.marginalPrices
-
-            # There is a case where the balancing happens at the end of the hour and continues to the next hour, which
-            # creates 26 values. Get the last 25 values.
-            prices = prices[-25:]
-            self.prices = [p.value for p in prices]
-
-            # Signal to start mix market only if the previous market is done
-            if not self.mix_market_running and not near_end_of_hour:
-                self.mix_market_running = True
-
-            # Read data from e+ output file
-            self.quantities = []
-            self.prices = []
-            self.building_demand_curves = []
-
-            if self.cur_ep_line < len(self.ep_lines):
-                for i in range(self.cur_ep_line, len(self.ep_lines)):
-                    line = self.ep_lines[i]
-                    if "mixmarket DEBUG: Quantities: " in line:
-                        self.quantities = eval(line[line.find('['):])
-                    if "mixmarket DEBUG: Prices: " in line:
-                        self.prices = eval(line[line.find('['):])
-                    if "mixmarket DEBUG: Curves: " in line:
-                        tmp = eval(line[line.find('['):])
-
-                        for item in tmp:
-                            if item is None:
-                                self.building_demand_curves.append(item)
-                            else:
-                                p1 = Point(item[0][0], item[0][1])
-                                p2 = Point(item[1][0], item[1][1])
-                                self.building_demand_curves.append((p1, p2))
-
-                    # Stop when have enough information (ie. all data responded by a single E+ simulation)
-                    if len(self.quantities) > 0 and len(self.prices) > 0 and len(self.building_demand_curves) > 0:
-                        self.cur_ep_line = i + 1
-                        break
-
-                self.elastive_load_model.set_tcc_curves(self.quantities,
-                                                        self.prices,
-                                                        self.building_demand_curves)
-                self.balance_market(1)
-            # End E+ output reading
-
-    def error_callback(self, timestamp, market_name, buyer_seller, error_code, error_message, aux):
-        _log.debug("{}: error for {} as {} at {} - Message: {}".format(self.agent_name,
-                                                                       market_name,
-                                                                       buyer_seller,
-                                                                       timestamp,
-                                                                       error_message))
 
     def make_day_ahead_market(self):
         # 191219DJH: It will be important that different agents' markets are similarly, if not identically,
@@ -649,8 +440,8 @@ class BuildingAgent(MarketAgent, TransactiveNode):
         campus.demandThreshold = self.monthly_peak_power
         campus.upOrDown = 'upstream'
         campus.inject(self,
-                            system_loss_topic=self.system_loss_topic,
-                            dc_threshold_topic=self.dc_threshold_topic)
+                      system_loss_topic=self.system_loss_topic,
+                      dc_threshold_topic=self.dc_threshold_topic)
 
         # Avg building meter
         building_meter = MeterPoint()
@@ -658,6 +449,10 @@ class BuildingAgent(MarketAgent, TransactiveNode):
         building_meter.measurementType = MeasurementType.AverageDemandkW
         building_meter.measurementUnit = MeasurementUnit.kWh
         campus.meterPoints.append(building_meter)
+
+        # SN: Added to integrate new state machine logic with VOLTTRON
+        # This topic will be used to send transactive signal
+        campus.publishTopic = self.building_demand_topic
 
         # Add campus as building's neighbor
         self.neighbors.append(campus)
@@ -677,6 +472,248 @@ class BuildingAgent(MarketAgent, TransactiveNode):
         self.localAssets.append(elastic_load)
 
         return elastic_load
+
+    def state_machine_loop(self):
+        # 191218DJH: This is the entire timing logic. It relies on current market object's state machine method events()
+        import time
+        while not self._stop_agent:  # a condition may be added to provide stops or pauses.
+            for i in range(len(self.markets)):
+                self.markets[i].events(self)
+                # NOTE: A delay may be added, but the logic of the market(s) alone should be adequate to drive system
+                # activities
+                time.sleep(1)
+
+    @Core.receiver('onstop')
+    def onstop(self, sender, **kwargs):
+        self._stop_agent = True
+
+    #########################################################################
+    # SN: TCC Market methods
+    #########################################################################
+    def offer_callback(self, timestamp, market_name, buyer_seller):
+        if market_name in self.market_names:
+            # Get the price for the corresponding market
+            idx = int(market_name.split('_')[-1])
+            price = self.prices[idx+1]
+            # price *= 1000.  # Convert to mWh to be compatible with the mixmarket
+
+            # Quantity
+            min_quantity = 0
+            max_quantity = 10000  # float("inf")
+
+            # Create supply curve
+            supply_curve = PolyLine()
+            supply_curve.add(Point(quantity=min_quantity, price=price))
+            supply_curve.add(Point(quantity=max_quantity, price=price))
+
+            # Make offer
+            _log.debug("{}: offer for {} as {} at {} - Curve: {} {}".format(self.agent_name,
+                                                                        market_name,
+                                                                        SELLER,
+                                                                        timestamp,
+                                                                        supply_curve.points[0],
+                                                                        supply_curve.points[1]))
+            success, message = self.make_offer(market_name, SELLER, supply_curve)
+            _log.debug("{}: offer has {} - Message: {}".format(self.agent_name, success, message))
+
+    # Dummy callbacks
+    def aggregate_power(self, peer, sender, bus, topic, headers, message):
+        _log.debug("{}: received topic for power aggregation: {}".format(self.agent_name,
+                                                                         topic))
+        data = message[0]
+        _log.debug("{}: updating power aggregation: {}".format(self.agent_name,
+                                                               data))
+
+    def reservation_callback(self, timestamp, market_name, buyer_seller):
+        _log.debug("{}: wants reservation for {} as {} at {}".format(self.agent_name,
+                                                                           market_name,
+                                                                           buyer_seller,
+                                                                           timestamp))
+        return True
+
+    def aggregate_callback(self, timestamp, market_name, buyer_seller, aggregate_demand):
+        if buyer_seller == BUYER and market_name in self.market_names:  # self.base_market_name in market_name:
+            _log.debug("{}: at ts {} min of aggregate curve : {}".format(self.agent_name,
+                                                                         timestamp,
+                                                                         aggregate_demand.points[0]))
+            _log.debug("{}: at ts {} max of aggregate curve : {}".format(self.agent_name,
+                                                                         timestamp,
+                                                                         aggregate_demand.points[- 1]))
+            _log.debug("At {}: Report aggregate Market: {} buyer Curve: {}".format(Timer.get_cur_time(),
+                                                                                   market_name,
+                                                                                   aggregate_demand))
+            idx = int(market_name.split('_')[-1])
+            idx += 1  # quantity has 25 values while there are 24 future markets
+            self.building_demand_curves[idx] = (aggregate_demand.points[0], aggregate_demand.points[-1])
+
+            # SN: Added for new state machine based TNT implementation
+            self.campus.receivedCurves = self.building_demand_curves
+
+    def price_callback(self, timestamp, market_name, buyer_seller, price, quantity):
+        _log.debug("{}: cleared price ({}, {}) for {} as {} at {}".format(Timer.get_cur_time(),
+                                                                          price,
+                                                                          quantity,
+                                                                          market_name,
+                                                                          buyer_seller,
+                                                                          timestamp))
+        idx = int(market_name.split('_')[-1])
+        self.prices[idx+1] = price  # price has 24 values, current hour price is excluded
+        if price is None:
+            raise "Market {} did not clear. Price is none.".format(market_name)
+        idx += 1  # quantity has 25 values while there are 24 future markets
+        if self.quantities[idx] is None:
+            self.quantities[idx] = 0.
+        if quantity is None:
+            _log.error("Quantity is None. Set it to 0. Details below.")
+            _log.debug("{}: ({}, {}) for {} as {} at {}".format(self.agent_name,
+                                                                price,
+                                                                quantity,
+                                                                market_name,
+                                                                buyer_seller,
+                                                                timestamp))
+            quantity = 0
+        self.quantities[idx] += quantity
+
+        _log.debug("At {}, Quantity is {} and quantities are: {}".format(Timer.get_cur_time(),
+                                                                         quantity,
+                                                                         self.quantities))
+        if quantity is not None and quantity < 0:
+            _log.error("Quantity received from mixmarket is negative!!! {}".format(quantity))
+
+        # If all markets (ie. exclude 1st value) are done then update demands, otherwise do nothing
+        mix_market_done = all([False if q is None else True for q in self.quantities[1:]])
+        if mix_market_done:
+            # Check if any quantity is greater than physical limit of the supply wire
+            _log.debug("Quantity: {}".format(self.quantities))
+            if not all([False if q > self.max_deliver_capacity else True for q in self.quantities[1:]]):
+                _log.error("One of quantity is greater than "
+                           "physical limit {}".format(self.max_deliver_capacity))
+
+            # Check demand curves exist
+            all_curves_exist = all([False if q is None else True for q in self.building_demand_curves[1:]])
+            if not all_curves_exist:
+                _log.error("Demand curves: {}".format(self.building_demand_curves))
+                raise "Mix market has all quantities but not all demand curves"
+
+            # Update demand and balance market
+            self.mix_market_running = False
+
+            curves_arr = [(c[0].tuppleize(), c[1].tuppleize()) if c is not None else None
+                          for c in self.building_demand_curves]
+            _log2.debug("Data at time {}:".format(Timer.get_cur_time()))
+            _log2.debug("Market intervals: {}".format([x.name for x in self.markets[0].timeIntervals]))
+            _log2.debug("Quantities: {}".format(self.quantities))
+            _log2.debug("Prices: {}".format(self.prices))
+            _log2.debug("Curves: {}".format(curves_arr))
+
+            db_topic = "/".join([self.db_topic, self.name, "AggregateDemand"])
+            message = {"Timestamp": format_timestamp(timestamp), "Curves": self.building_demand_curves}
+            headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
+            self.vip.pubsub.publish("pubsub", db_topic, headers, message).get()
+
+            db_topic = "/".join([self.db_topic, self.name, "Price"])
+            price_message = []
+            for i in range(len(self.markets[0].timeIntervals)):
+                ts = self.markets[0].timeIntervals[i].name
+                price = self.prices[i]
+                quantity = self.quantities[i]
+                price_message.append({'timeInterval': ts, 'price': price, 'quantity': quantity})
+            message = {"Timestamp": format_timestamp(timestamp), "Price": price_message}
+            headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
+            self.vip.pubsub.publish("pubsub", db_topic, headers, message).get()
+
+            # SN: redundant code
+            self.elastive_load_model.set_tcc_curves(self.quantities,
+                                                    self.prices,
+                                                    self.building_demand_curves)
+            #self.balance_market(1)
+
+    def run_ep_sim(self, start_of_cycle):
+        # Reset price array
+        self.prices = [None for i in range(25)]
+
+        # Save the 1st quantity as prior 2nd quantity
+        cur_quantity = self.quantities[1]
+        cur_curve = self.building_demand_curves[1]
+
+        # Reset quantities and curves
+        self.quantities = [None for i in range(25)]
+        self.building_demand_curves = [None for i in range(25)]
+
+        # If new cycle, set the 1st quantity to the corresponding quantity of previous hour
+        if start_of_cycle:
+            self.quantities[0] = cur_quantity
+            self.building_demand_curves[0] = cur_curve
+
+        # Balance market with previous known demands
+        # 191219DJH: The assumption of 1 TNS market per node will no longer be valid.
+        #            ***** This logic should be driven by the market state machines *****
+        #            I honestly can't tell where TNS ends and mixed market starts in this method code.
+        market = self.markets[0]  # Assume only 1 TNS market per node
+        market.signal_new_data = True
+        # market.balance(self)
+        # market.events(self)
+
+        # Check if now is near the end of the hour, applicable only if not in simulation mode
+        now = Timer.get_cur_time()
+        near_end_of_hour = False
+        if not self.simulation:
+            near_end_of_hour = self.near_end_of_hour(now)
+
+        if market.converged:
+            # Get new prices (expected 25 values: current hour + next 24)
+            prices = market.marginalPrices
+
+            # There is a case where the balancing happens at the end of the hour and continues to the next hour, which
+            # creates 26 values. Get the last 25 values.
+            prices = prices[-25:]
+            self.prices = [p.value for p in prices]
+
+            # Signal to start mix market only if the previous market is done
+            if not self.mix_market_running and not near_end_of_hour:
+                self.mix_market_running = True
+
+            # Read data from e+ output file
+            self.quantities = []
+            self.prices = []
+            self.building_demand_curves = []
+
+            if self.cur_ep_line < len(self.ep_lines):
+                for i in range(self.cur_ep_line, len(self.ep_lines)):
+                    line = self.ep_lines[i]
+                    if "mixmarket DEBUG: Quantities: " in line:
+                        self.quantities = eval(line[line.find('['):])
+                    if "mixmarket DEBUG: Prices: " in line:
+                        self.prices = eval(line[line.find('['):])
+                    if "mixmarket DEBUG: Curves: " in line:
+                        tmp = eval(line[line.find('['):])
+
+                        for item in tmp:
+                            if item is None:
+                                self.building_demand_curves.append(item)
+                            else:
+                                p1 = Point(item[0][0], item[0][1])
+                                p2 = Point(item[1][0], item[1][1])
+                                self.building_demand_curves.append((p1, p2))
+
+                    # Stop when have enough information (ie. all data responded by a single E+ simulation)
+                    if len(self.quantities) > 0 and len(self.prices) > 0 and len(self.building_demand_curves) > 0:
+                        self.cur_ep_line = i + 1
+                        break
+
+                self.elastive_load_model.set_tcc_curves(self.quantities,
+                                                        self.prices,
+                                                        self.building_demand_curves)
+                #self.balance_market(1)
+            # End E+ output reading
+
+    def error_callback(self, timestamp, market_name, buyer_seller, error_code, error_message, aux):
+        _log.debug("{}: error for {} as {} at {} - Message: {}".format(self.agent_name,
+                                                                       market_name,
+                                                                       buyer_seller,
+                                                                       timestamp,
+                                                                       error_message))
+
 
 
 def main(argv=sys.argv):

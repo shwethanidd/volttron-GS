@@ -57,8 +57,8 @@
 # }}}
 
 
-# import logging
-# from volttron.platform.agent import utils
+import logging
+from volttron.platform.agent import utils
 
 from helpers import *
 from measurement_type import MeasurementType
@@ -68,8 +68,8 @@ from const import *
 from vertex import Vertex
 from timer import Timer
 
-# utils.setup_logging()
-# _log = logging.getLogger(__name__)
+utils.setup_logging()
+_log = logging.getLogger(__name__)
 
 
 class BulkSupplier_dc(Neighbor):
@@ -105,8 +105,8 @@ class BulkSupplier_dc(Neighbor):
         # importation (power>0) from an electricity supplier. Warn the user and
         # return if the maximum power is negative.
         if maximum_power < 0:
-            # _log.warning('Maximum power must be positive in BulkSupplier_dc.m')
-            # E _log.warning('Returning without creating active vertices for ' + self.name)
+            _log.warning('Maximum power must be positive in BulkSupplier_dc.m')
+            _log.warning('Returning without creating active vertices for ' + self.name)
             return
 
         # Get the minimum power for this neighbor.
@@ -114,8 +114,8 @@ class BulkSupplier_dc(Neighbor):
 
         # Only importation is supported from this non-transactive neighbor.
         if minimum_power < 0:
-            # _log.warning('Minimum power must be positive in "BulkSupplier_dc.m')
-            # _log.warning('Returning without creating active vertices for ' + self.name)
+            _log.warning('Minimum power must be positive in "BulkSupplier_dc.m')
+            _log.warning('Returning without creating active vertices for ' + self.name)
             return
 
         # Cost coefficient a0. This is unavailable from a supply curve, so it must be determined directly from the

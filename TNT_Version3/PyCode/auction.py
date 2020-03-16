@@ -160,7 +160,7 @@ class Auction(Market):
                 all_received = False
 
                 # and call on the downstream agent model to try and receive the signal again:
-                downstream_agent.receive_transactive_signal(my_transactive_node)
+                downstream_agent.receive_transactive_signal(my_transactive_node, downstream_agent.receivedCurves)
 
         # If all expected bids have been received from downstream agents, have the downstream neighbor models update
         # their vertices and schedule themselves. The result of this will be an updated set of active vertices for each
@@ -191,8 +191,9 @@ class Auction(Market):
                     # Call on the upstream agent model to prepare its transactive signal.
                     upstream_agent.prep_transactive_signal(my_transactive_node)
 
-                # Send the transactive signal (i.e., aggregated bid) to the upstream agent if it is a transactive agent.
-                    upstream_agent.send_transactive_signal(my_transactive_node)
+                    # Send the transactive signal (i.e., aggregated bid) to the upstream agent
+                    # if it is a transactive agent.
+                    upstream_agent.send_transactive_signal(my_transactive_node, upstream_agent.publish_topic)
 
     def while_in_delivery_lead(self, my_transactive_node):
         """
@@ -249,7 +250,7 @@ class Auction(Market):
                 all_received = False
 
                 # Call on the upstream agent model to try and receive the signal again.
-                upstream_agent.receive_transactive_signal(my_transactive_node)
+                upstream_agent.receive_transactive_signal(my_transactive_node, upstream_agent.receivedCurves)
 
         # If offers have been received for all active market time intervals from the upstream agent,
         if all_received is True:
@@ -265,4 +266,4 @@ class Auction(Market):
                 downstream_agent.prep_transactive_signal(my_transactive_node)
 
                 # and send it a transactive signal (i.e., an offer).
-                downstream_agent.send_transactive_signal(my_transactive_node)
+                downstream_agent.send_transactive_signal(my_transactive_node, downstream_agent.publish_topic)

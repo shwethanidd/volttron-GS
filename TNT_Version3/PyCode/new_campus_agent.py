@@ -60,11 +60,12 @@
 import sys
 import logging
 import datetime
-# from dateutil import parser
+from dateutil import parser
+from datetime import timedelta
 
-# from volttron.platform.vip.agent import Agent, Core, PubSub, RPC, compat
-# from volttron.platform.agent import utils
-# from volttron.platform.agent.utils import (get_aware_utc_now, format_timestamp)
+from volttron.platform.vip.agent import Agent, Core, PubSub, RPC, compat
+from volttron.platform.agent import utils
+from volttron.platform.agent.utils import (get_aware_utc_now, format_timestamp)
 
 
 from helpers import *
@@ -74,29 +75,26 @@ from meter_point import MeterPoint
 # from market import Market
 from market_state import MarketState
 from neighbor_model import Neighbor
-# from local_asset_model import LocalAsset
 from TransactiveNode import TransactiveNode
 from temperature_forecast_model import TemperatureForecastModel
 from solar_pv_resource_model import SolarPvResource
 from openloop_pnnl_load_predictor import OpenLoopPnnlLoadPredictor
-from vertex import Vertex
-from timer import Timer
-from day_ahead_auction import DayAheadAuction
+from .vertex import Vertex
+from .timer import Timer
+from .day_ahead_auction import DayAheadAuction
 
-# utils.setup_logging()
+utils.setup_logging()
 _log = logging.getLogger(__name__)
 __version__ = '0.1'
 
 
-# TODO: Re-enable inheritance from class Agent. This was removed to facilitate testing apart from volttron.
-# class CampusAgent(Agent, TransactiveNode):
-class CampusAgent(TransactiveNode):
+class CampusAgent(Agent, TransactiveNode):
     def __init__(self, config_path, **kwargs):
-        # Agent.__init__(self, **kwargs)
+        Agent.__init__(self, **kwargs)
         TransactiveNode.__init__(self)
 
-        self.config_path = config_path
-        # self.config = utils.load_config(config_path)
+        # self.config_path = config_path
+        self.config = utils.load_config(config_path)
         self.name = self.config.get('name')
         self.market_cycle_in_min = int(self.config.get('market_cycle_in_min', 60))
         self.duality_gap_threshold = float(self.config.get('duality_gap_threshold', 0.01))
@@ -129,6 +127,7 @@ class CampusAgent(TransactiveNode):
         Timer.simulation = self.simulation
         Timer.sim_start_time = self.simulation_start_time
         Timer.sim_one_hr_in_sec = self.simulation_one_hour_in_seconds
+        self._stop_agent = False
 
     @Core.receiver('onstart')
     def onstart(self, sender, **kwargs):
@@ -145,6 +144,9 @@ class CampusAgent(TransactiveNode):
                                       prefix=self.building_demand_topic.format(bldg),
                                       callback=self.new_demand_signal)
 
+        # SN: Added for new state machine based TNT implementation
+        self.core.spawn_later(5, self.state_machine_loop)
+
     def new_demand_signal(self, peer, sender, bus, topic, headers, message):
         _log.debug("At {}, {} receives new demand records: {}".format(Timer.get_cur_time(),
                                                                         self.name, message))
@@ -157,10 +159,11 @@ class CampusAgent(TransactiveNode):
         if len(neighbors) == 1:
             neighbor = neighbors[0]
 
+            neighbor.receivedCurves = demand_curves
             # 191219DJH: This logic should be deferred to the new market state machine, please.
             # neighbor.receive_transactive_signal(self, demand_curves)
             # self.balance_market(1, start_of_cycle, fail_to_converged, neighbor)
-
+            # self.markets[0].events(self)
         else:
             _log.error("{}: There are {} building(s) with name {}."
                        .format(self.name, len(neighbors), building_name))
@@ -175,7 +178,8 @@ class CampusAgent(TransactiveNode):
         supply_curves = message['curves']
         start_of_cycle = message['start_of_cycle']
         fail_to_converged = message['fail_to_converged']
-
+        # SN: Added for new TNT state machine based implementation
+        self.city.receivedCurves = supply_curves
         # 191219DJH: this logic should be deferred to the new market state machine, please.
         # self.city.receive_transactive_signal(self, supply_curves)
         # if start_of_cycle:
@@ -293,6 +297,9 @@ class CampusAgent(TransactiveNode):
         # This is different building to building
         bldg.defaultPower = bldg.minimumPower/2                 # bldg_powers[2]  # [avg.kW]
         bldg.defaultVertices = [Vertex(float("inf"), 0, bldg.defaultPower, True)]
+        # SN: Added to integrate new state machine logic with VOLTTRON
+        # This topic will be used to send transactive signal
+        bldg.publishTopic = self.campus_supply_topic
 
         self.neighbors.append(bldg)
 
@@ -419,23 +426,30 @@ class CampusAgent(TransactiveNode):
         city.demandThreshold = self.monthly_peak_power
         city.upOrDown = 'upstream'  # Newly required for agents participating in auction markets.
         city.inject(self,
-                          system_loss_topic=self.system_loss_topic,
-                          dc_threshold_topic=self.dc_threshold_topic)
+                    system_loss_topic=self.system_loss_topic,
+                    dc_threshold_topic=self.dc_threshold_topic)
 
+        # SN: Added to integrate new state machine logic with VOLTTRON
+        # This topic will be used to send transactive signal
+        city.publishTopic = self.campus_demand_topic
         # Add city as campus' neighbor
         self.neighbors.append(city)
 
         return city
 
-    def go(self):
+    def state_machine_loop(self):
         # 191218DJH: This is the entire timing logic. It relies on current market object's state machine method events()
         import time
-        while True:  # a condition may be added to provide stops or pauses.
+        while not self._stop_agent:  # a condition may be added to provide stops or pauses.
             for i in range(len(self.markets)):
                 self.markets[i].events(self)
                 # NOTE: A delay may be added, but the logic of the market(s) alone should be adequate to drive system
                 # activities
                 time.sleep(1)
+
+    @Core.receiver('onstop')
+    def onstop(self, sender, **kwargs):
+        self._stop_agent = True
 
 
 # noinspection PyUnresolvedReferences

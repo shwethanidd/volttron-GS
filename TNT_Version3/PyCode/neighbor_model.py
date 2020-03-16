@@ -60,8 +60,7 @@
 # from datetime import datetime, timedelta, date, time
 # import csv
 
-# import logging
-# TODO: Reenable logging throughout NeighborModel.
+import logging
 import json
 
 from helpers import *
@@ -72,11 +71,9 @@ from vertex import Vertex
 from timer import Timer
 from direction import Direction
 
-"""  # LOOK: Commented out in absence of Volttron code
 from volttron.platform.agent import utils
 utils.setup_logging()
 _log = logging.getLogger(__name__)
-"""
 
 # 191217DJH: This class had originally inherited from class Model. Model will be deleted.
 
@@ -144,6 +141,9 @@ class Neighbor:
         self.sentSignal = []                                # [TransactiveRecord] Last records sent
         self.totalDualCost = 0.0                            # [float] [$]
         self.totalProductionCost = 0.0                      # [float] [$]
+        # SN: Added to integrate new state machine logic with VOLTTRON
+        self.publishTopic = None
+        self.receivedCurves = None
 
     def calculate_reserve_margin(self, market):
         # CALCULATE_RESERVE_MARGIN() - Estimate the spinning reserve margin in each active time interval
@@ -279,7 +279,7 @@ class Neighbor:
             if len(ss) == 0:
                 # No signal has been sent in this time interval. This is the first convergence requirement. Set the
                 # convergence flag false.
-                # _log.debug("Signal for time interval {} ({}). Enable send flag.".format(i, time_intervals[i].name))
+                _log.debug("Signal for time interval {} ({}). Enable send flag.".format(i, time_intervals[i].name))
                 flag = False
 
             # received and received AFTER last sent and there is a big diff b/w ss and rs
@@ -288,14 +288,13 @@ class Neighbor:
                 # received AFTER the last time a message was sent. These are preconditions for the second convergence
                 # requirement. Function are_different1() checks whether the sent and received signals differ
                 # significantly. If all these conditions are true, the Neighbor is not converged.
-                """
                 _log.debug("TCC for {} are_different1 returned True? Check: rs={}, ss={}, "
                                 "rs_ts={}, ss_ts={}, threshold={}".format(
                                 self.name,
                                 [(x.timeInterval, x.record, x.power, x.marginalPrice) for x in rs],
                                 [(x.timeInterval, x.record, x.power, x.marginalPrice) for x in ss],
                                 rs_ts, ss_ts, self.convergenceThreshold))
-                """
+
                 flag = False
 
             # TODO: Find out why the timing does not work with t_threshold.
@@ -305,14 +304,12 @@ class Neighbor:
                 # This is a precondition to the third convergence criterion. Function are_different2() returns true if
                 # mySignal (ms) and the sentSignal (ss) differ significantly, meaning that local conditions have changed
                 # enough that a new, revised signal should be sent.
-                """
                 _log.debug("TCC for {} are_different2 returned True? Check: ms={}, ss={}, "
                            "rs_ts={}, ss_ts={}, threshold={}".format(
                     self.name,
                     [(x.timeInterval, x.record, x.power, x.marginalPrice) for x in ms],
                     [(x.timeInterval, x.record, x.power, x.marginalPrice) for x in ss],
                     rs_ts, ss_ts, self.convergenceThreshold))
-                """
                 flag = False
 
             # Check whether a convergence flag exists in the indexed time interval.
@@ -335,11 +332,11 @@ class Neighbor:
             self.converged = False
         else:
             self.converged = True
-        """    
+
         _log.debug("TCC convergence flags for {} are {}".format(
             self.name, [(format_ts(f.timeInterval.startTime), f.value) for f in self.convergenceFlags]))
         _log.debug("TCC convergence flag for {} is {}.".format(self.name, self.converged))
-        """
+
 
     def marginal_price_from_vertices(self, power, vertices):
         # Given a power, determine the corresponding marginal price from a set of supply- or demand-curve vertices.
@@ -380,7 +377,7 @@ class Neighbor:
 
                     # The segment is horizontal. Marginal price is indefinite. Assign the marginal price of the second
                     # vertex and return.
-                    #  _log.warning('segment is horizontal')
+                    _log.warning('segment is horizontal')
                     marginal_price = vertices[i + 1].marginalPrice
                     return marginal_price
                 else:
@@ -466,7 +463,7 @@ class Neighbor:
                 interval_value.value = value  # [avg. kW]
 
         sp = [(x.timeInterval.name, x.value) for x in self.scheduledPowers]
-        #        _log.debug("{} neighbor model scheduledPowers are: {}".format(self.name, sp))
+        _log.debug("{} neighbor model scheduledPowers are: {}".format(self.name, sp))
 
     def schedule_engagement(self):
         # Required from AbstractModel, but not particularly useful for any Neighbor.
@@ -510,17 +507,15 @@ class Neighbor:
                 d = cur_demand.value
 
             self.demandThreshold = max([0, self.demandThreshold, d])  # [avg.kW]
-            # _log.debug("measurement: {} threshold: {}".format(d, self.demandThreshold))
+            _log.debug("measurement: {} threshold: {}".format(d, self.demandThreshold))
         else:
             # An appropriate MeterPoint was found. The demand threshold may be updated from the MeterPoint.
 
             # Update the demand threshold.
             self.demandThreshold = max([0, self.demandThreshold, mtr.currentMeasurement])  # [avg.kW]
-            """
             _log.debug("Meter: {} measurement: {} threshold: {}".format(mtr.name,
                                                                         mtr.current_measurement,
                                                                         self.demandThreshold))
-            """
 
         # The demand threshold should be reset in a new month. First find the current month number mon.
         mon = Timer.get_cur_time().month
@@ -587,7 +582,7 @@ class Neighbor:
         self.totalDualCost = sum([x.value for x in self.dualCosts])  # total dual cost [$]
 
         dc = [(x.timeInterval.name, x.value) for x in self.dualCosts]
-#        _log.debug("{} neighbor model dual costs are: {}".format(self.name, dc))
+        _log.debug("{} neighbor model dual costs are: {}".format(self.name, dc))
 
     def update_production_costs(self, market):
         time_intervals = market.timeIntervals
@@ -632,7 +627,7 @@ class Neighbor:
         self.totalProductionCost = sum([x.value for x in self.productionCosts])  # total production cost [$]
 
         pc = [(x.timeInterval.name, x.value) for x in self.productionCosts]
-        # _log.debug("{} neighbor model production costs are: {}".format(self.name, pc))
+        _log.debug("{} neighbor model production costs are: {}".format(self.name, pc))
 
     def update_vertices(self, market):
         # Update the active vertices that define Neighbors' residual flexibility in the form of supply or demand curves.
@@ -671,10 +666,8 @@ class Neighbor:
 
             if len(default_vertices) == 0:
                 # No default vertices are found. Warn and return.
-                """
                 _log.warning('At least one default vertex must be defined for neighbor model %s. '
                              'Scheduling was not performed' % (self.name))
-                """
                 return
 
             if not self.transactive:
@@ -821,22 +814,17 @@ class Neighbor:
                                                                 message=dc_msg)
                                 '''
                                 # Debug negative price & demand charge
-                                """
                                 _log.debug("power: {} - demand charge threshold: {} - predicted power peak: {}"
                                            .format(power, demand_charge_threshold, predicted_prior_peak))
                                 _log.debug("prior power: {}".format(prior_power))
                                 _log.debug("received vertices: {}"
                                            .format([(v.timeInterval, v.power) for v in received_vertices]))
-                                """
-
                             except:
-                                """
                                 _log.error("{} has power {} AND object ({}) maxPower {} and minPower {}"
                                            .format(self.name, power,
                                                    self.name,
                                                    self.maximumPower,
                                                    self.minimumPower))
-                                """
                                 raise
                         # Create a corresponding (price,power) pair (aka "active vertex") using the received power and
                         # marginal price. See struct Vertex().
@@ -914,9 +902,8 @@ class Neighbor:
                                 interval_values[k].value = vertex  # an IntervalValue
 
                     else:
-
                         pass
-                        # _log.debug("NO DEMAND CHARGE 1")
+                        _log.debug("NO DEMAND CHARGE 1")
 
             else:
 
@@ -924,7 +911,7 @@ class Neighbor:
                 raise ('Neighbor %s must be either transactive or not.' % (self.name))
 
         av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in self.activeVertices]
-        # _log.debug("{} neighbor model active vertices are: {}".format(self.name, av))
+        _log.debug("{} neighbor model active vertices are: {}".format(self.name, av))
 
     def prep_transactive_signal(self, market, this_transactive_node):
         # Prepare transactive records to send to a transactive neighbor. The prepared transactive signal should
@@ -999,7 +986,7 @@ class Neighbor:
                 else:
                     marginal_price_0 = self.marginal_price_from_vertices(scheduled_power, vertices)
             except:
-                # log.error('errors/warnings with object ' + self.name)
+                _log.error('errors/warnings with object ' + self.name)
                 pass
 
             # Create transactive record #0 to represent that balance point, and populate its properties.
@@ -1103,33 +1090,30 @@ class Neighbor:
         # If neighbor is non-transactive, warn and return. Non-transactive neighbors do not communicate transactive
         # signals.
         if not self.transactive:
-            """
             _log.warning(
                 'Non-transactive neighbors do not send transactive signals. No signal is sent to %s.' % self.name)
-            """
             return
 
         # Collect current transactive records concerning myTransactiveNode.
         transactive_records = self.mySignal
 
         if len(transactive_records) == 0:  # No signal records are ready to send
-            # log.warning("No transactive records were found. No transactive signal can be sent to %s." % self.name)
+            _log.warning("No transactive records were found. No transactive signal can be sent to %s." % self.name)
             return
 
         msg = json.dumps(transactive_records, default=json_econder)
         msg = json.loads(msg)
-        """
+
         _log.debug("At {}, {} sends signal from {} on topic {} message {}"
                    .format(Timer.get_cur_time(),
                            self.name,
                            self.location, topic, msg))
         this_transactive_node.vip.pubsub.publish(peer='pubsub',
-                               topic=topic,
-                               message={'source': self.location,
-                                        'curves': msg,
-                                        'start_of_cycle': start_of_cycle,
-                                        'fail_to_converged': fail_to_converged})
-        """
+                                                 topic=topic,
+                                                 message={'source': self.location,
+                                                          'curves': msg,
+                                                          'start_of_cycle': start_of_cycle,
+                                                          'fail_to_converged': fail_to_converged})
 
         # Save the sent TransactiveRecord messages (i.e., sentSignal) as a copy of the calculated set that was drawn
         # upon by this method (i.e., mySignal).
@@ -1145,10 +1129,8 @@ class Neighbor:
 
         # If trying to receive a transactive signal from a non-transactive neighbor, create a warning and return.
         if not self.transactive:
-            """
             _log.warning('Transactive signals are not expected to be received from non-transactive neighbors. '
                          'No signal is read.')
-            """
             return
 
         self.receivedSignal = []
