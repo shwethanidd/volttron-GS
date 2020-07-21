@@ -1,4 +1,6 @@
-class Weekday:
+from enum import Enum
+
+class Weekday(Enum):
     Monday = 0
     Tuesday = 1
     Wednesday = 2

@@ -818,6 +818,7 @@ class IpWaterHeater(LocalAsset):
 
                         print(time_interval, alternative_control_action, prior_state)
 
+        self.scheduleCalculated = True
         return None
 
     # @costModeSetting.setter

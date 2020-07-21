@@ -68,6 +68,11 @@ from direction import Direction
 
 
 def test_while_in_negotiation():
+    # 200611DJH: This Auction method was improved recently to allow for complex assets that might take long to schedule
+    #            themselves. Consequently, scheduling is now initiated in method
+    #            transition_from_active_to_negotiation(), and method while_in_negotiation() simply makes sure that each
+    #            asset has finished scheduling. The LocalAsset method schedule() was necessarily made to set flag
+    #            sheduleCompleted when it is done doing so.
     print('  Running test_while_in_negotiation().')
     print('    CASE: Normal function. Asset should schedule, and market becomes converged')
 
@@ -96,6 +101,7 @@ def test_while_in_negotiation():
     assert test_market.marketState == MarketState.Negotiation
 
     try:
+        test_market.transition_from_active_to_negotiation(test_agent)
         test_market.while_in_negotiation(test_agent)
         print('    - The method ran without errors')
     except RuntimeWarning:

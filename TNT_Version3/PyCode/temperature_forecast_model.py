@@ -65,10 +65,10 @@ from dateutil import parser
 import dateutil.tz
 import gevent
 
-from information_service_model import InformationServiceModel
-from measurement_type import MeasurementType
-from measurement_unit import MeasurementUnit
-from interval_value import IntervalValue
+from .information_service_model import InformationServiceModel
+from .measurement_type import MeasurementType
+from .measurement_unit import MeasurementUnit
+from .interval_value import IntervalValue
 
 from volttron.platform.agent import utils
 from volttron.platform.jsonrpc import RemoteError
@@ -201,6 +201,7 @@ class TemperatureForecastModel(InformationServiceModel, object):
         self.init_weather_data()
         # Copy weather data to predictedValues
         self.predictedValues = []
+        _log.info("get_forecast_file: {}".format(mkt.timeIntervals))
         for ti in mkt.timeIntervals:
             # Find item which has the same timestamp as ti.timeStamp
             start_time = ti.startTime.replace(minute=0)

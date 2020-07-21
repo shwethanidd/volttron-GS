@@ -6,10 +6,10 @@ should ALWAYS be defined to drive normal operations. These following occupancy m
 See class ModeSchedule concerning the means to schedule occupancy modes.
 """
 
-from ip_constants import Constant
+from .ip_constants import Constant
 
 
-class OccupancyMode:
+class OccupancyMode(object):
 
     def __init__(self,
                  maximum_cooling=None,

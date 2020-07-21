@@ -57,7 +57,7 @@
 # }}}
 
 
-class IntervalValue:
+class IntervalValue(object):
     """
     An IntervalValue instance is used to keep track of a value (measurement, quality, etc.)
     with its corresponding TimeInterval instance.
@@ -76,6 +76,18 @@ class IntervalValue:
     # Subdivide an IntervalValue into multiple identical IntervalValues.
     def subdivide(self):
         pass
+
+    def getDict(self):
+        interval_value_dict = {
+        "scheduled": self.scheduled,
+        "associatedClass": self.associatedClass,
+        "associatedObject": self.associatedObject,
+        "timeIntervalId": self.id,
+        "timeInterval": self.timeInterval,
+        "measurementType": self.measurementType,
+        "value": self.value
+        }
+        return interval_value_dict
 
 
 if __name__ == '__main__':

@@ -456,8 +456,10 @@ def test_prep_transactive_signal():
     test_model.transactive = True
     test_model.scheduledPowers = [
         IntervalValue(test_model, time_interval, test_market, MeasurementType.ScheduledPower, 200)]
+    test_model.maximumPower = 200
+    test_model.minimumPower = -200
 
-    test_asset_model.activeVertices = [interval_values[2]]
+    test_asset_model.activeVertices = [interval_values[1]]
 
     try:
         test_model.prep_transactive_signal(test_market, test_myTransactiveNode)
@@ -466,7 +468,8 @@ def test_prep_transactive_signal():
         print('  - ERRORS ENCOUNTERED')
 
     assert len(test_model.mySignal) == 1, '  - the wrong number of transactive records were stored'
-    assert test_model.mySignal[0].power == -200 and test_model.mySignal[0].marginalPrice == float("inf"), \
+    assert test_model.mySignal[0].power == test_asset_model.activeVertices[0].value.power \
+           and test_model.mySignal[0].marginalPrice == float("inf"), \
         '  - the transactive record values were not as expected'
 
     # TEST 3
@@ -479,7 +482,10 @@ def test_prep_transactive_signal():
     test_model.maximumPower = -10
     test_model.minimumPower = -75
 
-    test_asset_model.activeVertices = [interval_values[2], interval_values[4]]
+    test_asset_model.activeVertices = [interval_values[2], interval_values[4], IntervalValue(test_asset_model,
+                                                                                            time_interval, test_market,
+                                                                                            'Active Vertex',
+                                                                                             Vertex(0.4, 0, 50))]
 
     try:
         test_model.prep_transactive_signal(test_market, test_myTransactiveNode)
@@ -507,7 +513,10 @@ def test_prep_transactive_signal():
     test_model.maximumPower = 75
     test_model.minimumPower = 10
 
-    test_asset_model.activeVertices = [interval_values[0], interval_values[2]]
+    test_asset_model.activeVertices = [interval_values[0], interval_values[2], IntervalValue(test_asset_model,
+                                                                                             time_interval, test_market,
+                                                                                             'Active Vertex',
+                                                                                             Vertex(0.2, 0, -50))]
 
     try:
         test_model.prep_transactive_signal(test_market, test_myTransactiveNode)
@@ -517,12 +526,13 @@ def test_prep_transactive_signal():
 
     assert len(test_model.mySignal) == 3, '  - the wrong number of transactive records were stored'
 
-    non_members = [x for x in test_model.mySignal if x.power not in [-10, -50, -75]]
+    non_members = [x for x in test_model.mySignal
+                   if round(x.power, 2) not in [round(-10, 2), round(-50, 2), round(-75, 2)]]
     assert len(non_members) == 0, '  - the record power values were not as expected'
 
     cond1 = [abs(x.marginalPrice - 0.1500) < 0.0001 for x in test_model.mySignal]
     cond2 = [abs(x.marginalPrice - 0.2000) < 0.0001 for x in test_model.mySignal]
-    cond3 = [abs(x.marginalPrice - 0.2800) < 0.0001 for x in test_model.mySignal]
+    cond3 = [abs(x.marginalPrice - 0.280) < 0.0001 for x in test_model.mySignal]
     assert any(cond1) and any(cond2) and any(cond3), '  - the marginal price values were not as expected'
 
     # TEST 5
@@ -536,7 +546,8 @@ def test_prep_transactive_signal():
     test_model.minimumPower = 25
     test_asset_model.activeVertices = [interval_values[0],
                                        interval_values[1],  # an extra vertex in active flex range
-                                       interval_values[2]]
+                                       interval_values[2], IntervalValue(test_asset_model, time_interval, test_market,
+                                                                         'Active Vertex', Vertex(0.25, 0, -50))]
 
     try:
         test_model.prep_transactive_signal(test_market, test_myTransactiveNode)
@@ -549,9 +560,9 @@ def test_prep_transactive_signal():
     non_members = [x for x in test_model.mySignal if x.power not in [-25, -50, -75, -37.5]]
     assert len(non_members) == 0, '  - the record power values were not as expected'
 
-    cond1 = [abs(x.marginalPrice - 0.1800) < 0.0001 for x in test_model.mySignal]
+    cond1 = [abs(x.marginalPrice - 0.2750) < 0.0001 for x in test_model.mySignal]
     cond2 = [abs(x.marginalPrice - 0.1400) < 0.0001 for x in test_model.mySignal]
-    cond3 = [abs(x.marginalPrice - 0.2333) < 0.0001 for x in test_model.mySignal]
+    cond3 = [abs(x.marginalPrice - 0.25) < 0.0001 for x in test_model.mySignal]
     cond4 = [abs(x.marginalPrice - 0.2000) < 0.0001 for x in test_model.mySignal]
     assert any(cond1) and any(cond2) and any(cond3) and any(cond4), '  - the marginal price values were not as expected'
 

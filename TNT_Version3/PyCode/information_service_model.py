@@ -60,12 +60,12 @@
 
 from datetime import timedelta
 
-from measurement_type import MeasurementType
-from measurement_unit import MeasurementUnit
-from interval_value import IntervalValue
+from .measurement_type import MeasurementType
+from .measurement_unit import MeasurementUnit
+from .interval_value import IntervalValue
 
 
-class InformationServiceModel:
+class InformationServiceModel(object):
     # InformationServiceModel Base Class
     # An InformationServiceModel manages an InformationService and predicts or
     # interpolates the information it provides.

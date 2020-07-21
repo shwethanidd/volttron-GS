@@ -57,10 +57,10 @@
 # }}}
 
 
-from auction import Auction
-from market_state import MarketState
+from .auction import Auction
+from .market_state import MarketState
 from datetime import timedelta
-from real_time_auction import RealTimeAuction
+from .real_time_auction import RealTimeAuction
 
 
 class DayAheadAuction(Auction):

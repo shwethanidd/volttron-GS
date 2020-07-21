@@ -63,28 +63,31 @@
 import logging
 import json
 
-from helpers import *
-from measurement_type import MeasurementType
-from interval_value import IntervalValue
-from transactive_record import TransactiveRecord
-from vertex import Vertex
-from timer import Timer
-from direction import Direction
+from .helpers import *
+from .measurement_type import MeasurementType
+from .interval_value import IntervalValue
+from .transactive_record import TransactiveRecord
+from .vertex import Vertex
+from .timer import Timer
+from .direction import Direction
 
 from volttron.platform.agent import utils
+from volttron.platform.messaging import topics, headers as headers_mod
+from volttron.platform.agent.utils import (get_aware_utc_now, format_timestamp)
+
 utils.setup_logging()
 _log = logging.getLogger(__name__)
 
 # 191217DJH: This class had originally inherited from class Model. Model will be deleted.
 
 
-class Neighbor:
+class Neighbor(object):
     # The Neighbor class manages the interface with a Neighbor object and represents it for the computational agent.
     # Members of the transactive network must be indicated by setting the "transactive" property true.
 
     def __init__(self,
                  convergence_threshold=0.05,
-                 cost_parameters=(0.0, 0.0, 0.0),
+                 cost_parameters=[0.0, 0.0, 0.0],
                  demand_month=datetime.today().month,
                  demand_rate=4.5,
                  demand_threshold=1e9,
@@ -490,6 +493,7 @@ class Neighbor:
 
             # No appropriate MeterPoint was found. The demand threshold must be inferred. Gather the active time
             # intervals ti and find the current (soonest) one.
+            #_log.info("neighbor_model.py: Market time intervals: {}, scheduledPowers: {}".format(market.timeIntervals, self.scheduledPowers))
             time_intervals = market.timeIntervals
             time_intervals.sort(key=lambda x: x.startTime)
 
@@ -935,12 +939,24 @@ class Neighbor:
         # OUTPUTS:
         # - Updates mySignal property, which contains transactive records that are ready to send to the transactive
         # neighbor
+        #
+        # 200529DJH: Simplifying the structure for Version 3. The net market vertices representing the current balance
+        #            point--indicated by Record #0--is not easily identified in an auction because marginal prices are
+        #            speculative, and modeled neighbor objects do not truly schedule before a price is returned from an
+        #            auction. It is still easy to find the soft extremes of the offered flexibility though. In this
+        #            revision,
+        #            (1) all the summed vertices in a viable range are turned into transactive records,
+        #            (2) a lone vertex is presumed to be Record #0 and is assigned to infinity (i.e., no flexibility),
+        #            (2) make sure that a vertex exists at the minimum soft constraint and assign Record #1
+        #            (3) make sure that a vertex exists at the maximum soft constraint and assign Record #2
+        #            (2) assign record numbers to other transactive records in range [3, 4, ...]. (Not worrying about
+        #                numbering continuity and hoping this will not be problematic.
 
         # Ensure that object tnm is a transactive neighbor.
         if not self.transactive:
             # log.warning('Neighbor must be transactive')
             return
-
+        _log.debug("prep_transactive_signal 1a")
         # Gather active time intervals.
         time_intervals = market.timeIntervals  # active TimeIntervals
         time_interval_names = [x.name for x in time_intervals]
@@ -948,127 +964,99 @@ class Neighbor:
         # [180830DJH: ENSURE THAT mySignal PROPERTY IS TRIMMED TO CONTAIN SIGNALS FROM ONLY THE ACTIVE TIME INTERVALS
         # USING THIS NEXT LINE.]
         self.mySignal = [x for x in self.mySignal if x.timeInterval in time_interval_names]
-
+        _log.debug("prep_transactive_signal 1b")
         # Index through active time intervals.
         for i in range(len(time_intervals)):
 
+            time_interval = time_intervals[i]  # indexed time interval
+            _log.debug("prep_transactive_signal 2a")
             # Keep only the transactive records that are NOT in the indexed time interval. The ones in the indexed time
-            # interval shall be recreated in this iteration.
-            self.mySignal = [x for x in self.mySignal if x.timeInterval != time_intervals[i].name]
+            # interval will be recreated in this iteration.
+            self.mySignal = [x for x in self.mySignal if x.timeInterval != time_interval.name]
 
             # Create the vertices of the net supply or demand curve, EXCLUDING this transactive neighbor (i.e., "tnm").
             # NOTE: It is important that the transactive neighbor is excluded.
-            vertices = market.sum_vertices(this_transactive_node, time_intervals[i], self)  # Vertices
+            vertices = market.sum_vertices(this_transactive_node, time_interval, self)  # Vertices
+            _log.debug("prep_transactive_signal 2b")
+            # This should be rare, but warn if no vertices are found.
+            if vertices is None:
+                RuntimeError('No summed vertices were found in method prep_transactive_signal for neighbor '
+                               + self.name + ' in time interval ' + time_intervals[i].name)
+                _log.debug("prep_transactive_signal 2c")
 
-            # Find the minimum and maximum powers from the vertices. These are soft constraints that represent a range
-            # of flexibility. The range will usually be excessively large from the supply side much smaller from the
-            # demand side.
+            # Find the minimum and maximum powers from the summed vertices. These are soft constraints that represent a
+            # range of flexibility. The range will usually be excessively large from the supply side much smaller from
+            # the demand side.
             vertex_powers = [x.power for x in vertices]  # [avg.kW]
+            minimum_power = max(-self.maximumPower, min(vertex_powers))  # [avg.kW]
+            maximum_power = min(-self.minimumPower, max(vertex_powers))  # [avg.kW]
+            _log.debug("prep_transactive_signal XXa")
+            # Find the marginal prices that correspond to the minimum and maximum soft power constraints.
+            # 200611DJH: This seems to be a logic error. If a constraint is in effect, this method will not find the
+            # same price as in the vertex. It is the power range that is more important.
+            # minimum_price = self.marginal_price_from_vertices(minimum_power, vertices)
+            # maximum_price = self.marginal_price_from_vertices(maximum_power, vertices)
+            _log.debug("prep_transactive_signal XXb")
+            # Convert the vertices that are in the power range into transactive records.
+            transactive_records = []
+            for x in range(len(vertices)):
+                vertex = vertices[x]
+                price = vertex.marginalPrice
+                power = vertex.power
 
-            maximum_vertex_power = max(vertex_powers)  # [avg.kW]
-            minimum_vertex_power = min(vertex_powers)  # [avg.kW]
+                if minimum_power <= power <= maximum_power:
+                    _log.debug(
+                        "prep_transactive_signal market state: {0}, node: {1}, power: {2}, max power: {3}, min power: {4}".format(
+                            market.marketState,
+                            this_transactive_node.name,
+                            power,
+                            maximum_power,
+                            minimum_power))
+                    new_record = TransactiveRecord(time_interval=time_interval,
+                                                           record=x,
+                                                           marginal_price=price,
+                                                           power=power)
+                    _log.debug("prep_transactive_signal XXd")
+                    transactive_records.append(new_record)
 
-            # Find the transactive Neighbor's (i.e., "tnm") scheduled power in the indexed time interval.
-            scheduled_power = find_obj_by_ti(self.scheduledPowers, time_intervals[i])
-            scheduled_power = scheduled_power.value
+            # At this point, transactive records have been created for all the summed vertices that are in range in this
+            # market time interval.
 
-            # Because the supply or demand curve of this transactive neighbor model was excluded, an offset is created
-            # between it and the one that had included the neighbor. The new balance point is mirrored equal to, but of
-            # opposite sign from, the scheduled power.
-            scheduled_power = -scheduled_power
+            # If flexibility is offered, make sure a transactive records have been created at the minimum and maximum
+            # soft power and price range constraints.
+            if minimum_power != maximum_power:
+                minimum_record = [x for x in transactive_records if x.power == minimum_power]
+                minimum_price = self.marginal_price_from_vertices(minimum_power, vertices)
+                if minimum_record is None or len(minimum_record) == 0:
+                    new_record = TransactiveRecord(time_interval=time_interval,
+                                                                   record=1,
+                                                                   marginal_price=minimum_price,
+                                                                   power=minimum_power)
+                    transactive_records.append(new_record)
+                maximum_record = [x for x in transactive_records if x.power == maximum_power]
+                maximum_price = self.marginal_price_from_vertices(maximum_power, vertices)
+                if maximum_record is None or len(maximum_record) == 0:
+                    new_record = TransactiveRecord(time_interval=time_interval,
+                                                                   record=2,
+                                                                   marginal_price=maximum_price,
+                                                                   power=maximum_power)
+                    transactive_records.append(new_record)
+            else:
+                assert len(vertices) == 1, (['Unexpected flexibility logic in module ' + self.name
+                                            + ' method prep_transactive_signal()'])
+                transactive_records[0].marginalPrice = float('inf')
+                transactive_records[0].record = 0
 
-            # Record #0: Balance power point
-            # Find the marginal price of the modified supply or demand curve that corresponds to the balance point.
-            try:
-                # [180830DJH: NEW CONDITIONAL ENSURES THAT A LONE REMNANT VERTEX HAS ITS MARGINAL PRICE SET TO INF.]
-                if len(vertices) == 1:
-                    marginal_price_0 = float('inf')
-                else:
-                    marginal_price_0 = self.marginal_price_from_vertices(scheduled_power, vertices)
-            except:
-                _log.error('errors/warnings with object ' + self.name)
-                pass
+            # It's really hard to identify record #0, the balance point, if the neighbor model has not scheduled its
+            # power. This next trick should work for many simple agents having only the extremes and balance point
+            # defined.
+            if len(transactive_records) == 3:
+                record_0 = [x for x in transactive_records if x.power != minimum_power and x.power != maximum_power]
+                record_0[0].record = 0
 
-            # Create transactive record #0 to represent that balance point, and populate its properties.
-            transactive_record = TransactiveRecord(time_interval=time_intervals[i],
-                                                   record=0,
-                                                   marginal_price=marginal_price_0,
-                                                   power=scheduled_power)
-
-            # Append the transactive signal to those that are ready to be sent.
-            self.mySignal.append(transactive_record)
-
-            if len(vertices) > 1:
-                # Transactive Record #1: Minimum neighbor power
-                # Find the minimum power. For transactive neighbors, the minimum may be based on the physical constraint
-                # of the line between neighbors. A narrower range may be used if the full range is infeasible. For
-                # example, it might not be feasible for a neighbor to change from a power importer to exporter, given it
-                # limited generation resources.
-                minimum_power = -self.maximumPower  # power [avg.kW]
-                minimum_power = max(minimum_power, minimum_vertex_power)
-
-                # Find the marginal price on the modified net suppy or demand curve that corresponds to the minimum
-                # power
-                marginal_price_1 = self.marginal_price_from_vertices(minimum_power, vertices)
-
-                # Create transactive record #1 to represent the minimum power, and populate its properties.
-                transactive_record = TransactiveRecord(time_interval=time_intervals[i],
-                                                       record=1,
-                                                       marginal_price=marginal_price_1,
-                                                       power=minimum_power)
-
-                # Append the transactive signal to those that are ready to be sent.
-                self.mySignal.append(transactive_record)
-
-                # Transactive Record #2: Maximum neighbor power
-                # Find the maximum power. For transactive neighbors, the maximum may be based on the physical constraint
-                # of the line between neighbors.
-                maximum_power = -self.minimumPower  # power [avg.kW]
-                maximum_power = min(maximum_power, maximum_vertex_power)
-
-                # Find the marginal price on the modified net supply or demand curve that corresponds to the neighbor's
-                # maximum power p
-                marginal_price_2 = self.marginal_price_from_vertices(maximum_power, vertices)  # price [$/kWh]
-
-                # Create Transactive Record #2 and populate its properties.
-                transactive_record = TransactiveRecord(time_interval=time_intervals[i],
-                                                       record=2,
-                                                       marginal_price=marginal_price_2,
-                                                       power=maximum_power)
-
-                # Append the transactive signal to the list of transactive signals that are ready to be sent to the
-                # transactive neighbor.
-                self.mySignal.append(transactive_record)  # transactive records
-
-                # Additional Transactive Records: Search for included vertices.
-                # Some of the vertices of the modified net supply or demand curve may lie between the vertices that have
-                # been defined. These additional vertices should be included to correctly convey the system's
-                # flexibiltiy to its neighbor.
-                # Create record index counter index. This must be incremented before adding a transactive record.
-                index = 2
-
-                # Index through the vertices of the modified net supply or demand curve to see if any of their marginal
-                # prices lie within the vertices that have been defined for this neighbor's miminum power (at
-                # marginal_price_1) and maximum power (at marginal_price_2).
-                for j in range(len(vertices) - 1):
-
-                    if marginal_price_1 < vertices[j].marginalPrice < marginal_price_2:
-
-                        # The vertex lies in the range defined by this neighbor's minimum and maximum power range and
-                        # corresponding marginal prices and should be included.
-
-                        # Create a new transactive record and assign its propteries. See struct TransactiveRecord.
-                        # NOTE: The vertex already resided on the modified net supply or demand curve and does not need
-                        # to be offset.
-                        # NOTE: A TransactiveRecord constructor is being used.
-                        index = index + 1  # new transactive record number
-                        transactive_record = TransactiveRecord(time_interval=time_intervals[i],
-                                                               record=index,
-                                                               marginal_price=vertices[j].marginalPrice,
-                                                               power=vertices[j].power)
-
-                        # Append the transactive record to the list of transactive records that are ready to send.
-                        self.mySignal.append(transactive_record)
+            # Append the transactive signals to those that are ready to be sent.
+            self.mySignal.extend(transactive_records)
+            _log.debug("prep_transactive_signal done")
 
     def send_transactive_signal(self, this_transactive_node, topic, start_of_cycle=False, fail_to_converged=False):
         # Send transactive records to a transactive neighbor.
@@ -1108,12 +1096,21 @@ class Neighbor:
                    .format(Timer.get_cur_time(),
                            self.name,
                            self.location, topic, msg))
-        this_transactive_node.vip.pubsub.publish(peer='pubsub',
+        if topic:
+            this_transactive_node.vip.pubsub.publish(peer='pubsub',
                                                  topic=topic,
                                                  message={'source': self.location,
                                                           'curves': msg,
                                                           'start_of_cycle': start_of_cycle,
                                                           'fail_to_converged': fail_to_converged})
+
+        # for record in transactive_records:
+        #     # Publish transactive record to be stored in historian
+        #     topic = this_transactive_node.transactive_record_topic
+        #     msg = record.getDict()
+        #     headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
+        #     this_transactive_node.vip.pubsub.publish(peer='pubsub', topic=topic,
+        #                                              headers=headers, message=msg)
 
         # Save the sent TransactiveRecord messages (i.e., sentSignal) as a copy of the calculated set that was drawn
         # upon by this method (i.e., mySignal).
@@ -1134,15 +1131,27 @@ class Neighbor:
             return
 
         self.receivedSignal = []
+        if curves is None:
+            _log.debug("receive_transactive_signal: curves is None {}".format(this_transactive_node.name))
+            return
+
         for curve in curves:
+            _log.debug("receive_transactive_signal: name: {}, curve:{}".format(this_transactive_node.name, curve))
             transactive_record = TransactiveRecord(time_interval=curve['timeInterval'],
                                                       record=int(curve['record']),
                                                       marginal_price=float(curve['marginalPrice']),
                                                       power=float(curve['power']),
                                                       cost=float(curve['cost']))
 
+            # Publish transactive record to be stored in historian
+            # topic = this_transactive_node.transactive_record_topic
+            # msg = transactive_record.getDict()
+            # headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
+            # this_transactive_node.vip.pubsub.publish(peer='pubsub',topic=topic, headers=headers, message=msg)
+
             # Save each transactive record
             self.receivedSignal.append(transactive_record)
+
 
     def update_costs(self, market):
         """
@@ -1167,6 +1176,53 @@ class Neighbor:
         # Sum total production and dual costs through all time intervals.
         self.totalProductionCost = sum([x.value for x in self.productionCosts])
         self.totalDualCost = sum([x.value for x in self.dualCosts])
+
+    def include_losses(self, vertices):
+        # 200702DJH: I had originally included the implications of transport losses within the base neighbor class
+        #            methods. I'm finding that a more modular approach may be useful if the template methods are to
+        #            facilitate diverse market rules and procedures. Therefore, I am introducing methods to include and
+        #            later remove implications of losses and demand charges. These effects do not exist upstream of the
+        #            local transactive node agent, but they must be accounted in the local prices. I'm concluding that
+        #            the effects should be removed for the upstream neighbor's perspective. Furthermore, the three local
+        #            transactive signal representations ("my," "received," and "sent" signals) should always be stated
+        #            in respect to the neighbor's, not the local agent's, perspective. These modular methods should be
+        #            invoked to correct this neighbor model's vertices, which should be stated in respect to the local
+        #            transactive node and agent.
+        #            The method is being defined as a function to help make sure it is not applied multiple times.
+
+        if self.maximumPower is None or self.maximumPower <= 0:
+            print('WARNING: Method Neighbor.include_losses requires that a full maximum power value > 0 be assigned. '
+                                 'No losses were applied.')
+            return vertices
+
+        if type(self.lossFactor) != float or self.lossFactor <= 0:
+            print('WARNING: Property lossFactor must be a small positive number. No losses were applied.')
+            return vertices
+
+        corrected_vertices = []
+        for x in range(len(vertices)):
+            vertex = vertices[x]
+
+            if type(vertex) != Vertex:
+                print('WARNING: Input parameters are supposed to be of type Vertex. Not including losses.')
+                corrected_vertices.append(vertex)
+                continue
+
+            # Losses apply to only imported, not exported, power in the current practice. This is a normal outcome
+            # because vertices may lie on both sides of p=0 for a local asset or neighbor.
+            if vertex.power <= 0:
+                corrected_vertices.append(vertex)
+                continue
+
+            # Calculate the effective received power and price.
+            power = vertex.power * (1 - self.lossFactor * (vertex.power / self.maximumPower) ** 2)
+            if power > 0:
+                vertex.marginalPrice = (vertex.power * vertex.marginalPrice) / power
+                vertex.power = power
+
+            corrected_vertices.append(vertex)
+
+        return corrected_vertices
 
 
 if __name__ == '__main__':

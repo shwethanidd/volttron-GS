@@ -56,8 +56,9 @@
 
 # }}}
 
+from enum import Enum
 
-class MarketTypes:
+class MarketTypes(Enum):
     auction = 1
     consensus = 2
     unknown = 3

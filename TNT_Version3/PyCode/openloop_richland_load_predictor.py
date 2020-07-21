@@ -65,15 +65,15 @@ utils.setup_logging()
 _log = logging.getLogger(__name__)
 """
 
-from helpers import *
-from measurement_type import MeasurementType
-from measurement_unit import MeasurementUnit
-from interval_value import IntervalValue
-from market import Market
-from time_interval import TimeInterval
-from local_asset_model import LocalAsset
-from temperature_forecast_model import TemperatureForecastModel
-from vertex import Vertex
+from .helpers import *
+from .measurement_type import MeasurementType
+from .measurement_unit import MeasurementUnit
+from .interval_value import IntervalValue
+from .market import Market
+from .time_interval import TimeInterval
+from .local_asset_model import LocalAsset
+from .temperature_forecast_model import TemperatureForecastModel
+from .vertex import Vertex
 
 
 class OpenLoopRichlandLoadPredictor(LocalAsset, object):
@@ -401,6 +401,7 @@ class OpenLoopRichlandLoadPredictor(LocalAsset, object):
             else:
                 # The interval value already exist. Simply reassign its value.
                 interval_value.value = LOAD
+        self.scheduleCalculated = True
 
     @classmethod
     def test_all(cls):

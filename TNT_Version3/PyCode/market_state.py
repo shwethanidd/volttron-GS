@@ -55,9 +55,9 @@
 # under Contract DE-AC05-76RL01830
 
 # }}}
+from enum import Enum
 
-
-class MarketState:
+class MarketState(Enum):
     """
     MarketState is an enumeration os states of TimeIntervals as defined by the Market(s) in which myTransactiveNode
     transacts.

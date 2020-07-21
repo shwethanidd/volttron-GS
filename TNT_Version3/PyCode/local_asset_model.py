@@ -59,13 +59,13 @@
 import logging
 from volttron.platform.agent import utils
 
-from vertex import Vertex
-from interval_value import IntervalValue
-from measurement_type import MeasurementType
-from helpers import *
+from .vertex import Vertex
+from .interval_value import IntervalValue
+from .measurement_type import MeasurementType
+from .helpers import *
 # from market import Market
-from time_interval import TimeInterval
-from timer import Timer
+from .time_interval import TimeInterval
+from .timer import Timer
 
 
 utils.setup_logging()
@@ -103,6 +103,9 @@ class LocalAsset(object):
                  maximum_power=0.0,
                  minimum_power=0.0,
                  name='',
+                 # 200520DJH - The following Boolean property is added to give complex assets like TCC time to schedule
+                 # their powers.
+                 schedule_calculated=False,
                  scheduling_horizon=timedelta(hours=24),
                  subclass=None):
 
@@ -117,6 +120,9 @@ class LocalAsset(object):
         self.maximumPower = maximum_power           # [avg.kW, signed] Asset's physical "hard" constraint
         self.minimumPower = minimum_power           # [avg.kW, signed] Asset's physical "hard" constraint
         self.name = name                            # [text]
+        # 200520DJH - The following Boolean property is added to give complex assets like TCC time to schedule
+        # their powers.
+        self.scheduleCalculated = schedule_calculated  # Flag set True after asset has scheduled power
         self.schedulingHorizon = scheduling_horizon  # [time duration] Future that price and energy shift are relevant
         self.subclass = subclass                    # Future, unused
 
@@ -179,10 +185,12 @@ class LocalAsset(object):
 
         self.schedule_engagement(market)  # only applied to LocalAsset class
 
-        self.update_vertices(market)
+        # Update vertices and calculate reserve margins if schedule powers have been calculated
+        if self.scheduleCalculated:
+            self.update_vertices(market)
 
-        # Have the objects estimate their available reserve margin.
-        self.calculate_reserve_margin(market)
+            # Have the objects estimate their available reserve margin.
+            self.calculate_reserve_margin(market)
 
     def schedule_power(self, market):
         # Determine powers of an asset in active time intervals. NOTE that this method may be redefined by subclasses if
@@ -632,8 +640,8 @@ class LocalAsset(object):
                 # is allowed because it teaches how a more dynamic assignment may be maintained.
                 interval_value.value = value
 
-        # av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in self.activeVertices]
-        #        _log.debug("{} asset model active vertices are: {}".format(self.name, av))
+        av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in self.activeVertices]
+        _log.debug("{} asset model active vertices are: {}".format(self.name, av))
 
     def get_extended_prices(self, market):  # 200120DJH This does not, after all, require a TransactiveNode parameter.
         """
@@ -799,3 +807,16 @@ class LocalAsset(object):
         # Sum total production and dual costs through all time intervals.
         self.totalProductionCost = sum([x.value for x in self.productionCosts])
         self.totalDualCost = sum([x.value for x in self.dualCosts])
+
+    def getDict(self):
+        local_asset_dict = {
+            "name": self.name,
+            "description": self.description,
+            "location": self.location,
+            "costParameters": self.costParameters,
+            "defaultPower": self.defaultPower,
+            "engagementCost": self.engagementCost,
+            "maximumPower": self.maximumPower,
+            "minimumPower": self.minimumPower
+        }
+        return local_asset_dict

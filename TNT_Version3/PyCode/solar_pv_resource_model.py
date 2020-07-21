@@ -57,10 +57,10 @@
 # }}}
 
 
-from helpers import *
-from measurement_type import MeasurementType
-from local_asset_model import LocalAsset
-from interval_value import IntervalValue
+from .helpers import *
+from .measurement_type import MeasurementType
+from .local_asset_model import LocalAsset
+from .interval_value import IntervalValue
 
 
 class SolarPvResource(LocalAsset, object):
@@ -155,6 +155,7 @@ class SolarPvResource(LocalAsset, object):
         # TODO: This step may not be necessary for Python environment because of the way it does garbage cleanup.
         # Remove any extra engagement schedule values
         self.engagementSchedule = [x for x in self.engagementSchedule if x.timeInterval in time_intervals]
+        self.scheduleCalculated = True
 
 
 if __name__ == '__main__':

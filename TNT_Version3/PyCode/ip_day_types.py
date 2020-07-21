@@ -5,7 +5,7 @@ DAY_INDEX = 0
 SCHEDULE_INDEX = 1
 
 
-class DayType:
+class DayType(object):
 
     def __init__(self):
         self.dayType = [  # Assigns one ModeSchedule object to each weekday.

@@ -57,7 +57,7 @@
 # }}}
 
 
-class Direction:
+class Direction(object):
     bidirectional = 1
     downstream = 2
     unknown = 3

@@ -56,8 +56,9 @@
 
 # }}}
 
+from enum import Enum
 
-class MeasurementType:
+class MeasurementType(Enum):
     # MeasurementType Enumeration
     #   This enumeration is used by IntervalValue class to consistently
     #   specify types of measurements being made, including their units of

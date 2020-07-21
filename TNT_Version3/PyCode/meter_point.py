@@ -64,12 +64,12 @@
 
 from datetime import datetime, date, timedelta
 
-from measurement_type import MeasurementType
-from measurement_unit import MeasurementUnit
-from helpers import format_ts, format_date
+from .measurement_type import MeasurementType
+from .measurement_unit import MeasurementUnit
+from .helpers import format_ts, format_date
 
 
-class MeterPoint:
+class MeterPoint(object):
     def __init__(self,
                  description='',
                  measurement_interval=timedelta(hours=1),
@@ -118,3 +118,14 @@ class MeterPoint:
         Implementers will be found to have diverse practices for historians.
         """
         pass
+
+    def getDict(self):
+        meter_point_dict = {
+        "description": self.description,
+        "measurementInterval": self.measurementInterval,
+        "measurementType": self.measurementType,
+        "measurementUnit": self.measurementUnit,
+        "meter_point_name": self.name,
+        "lastUpdates": self.lastUpdate
+        }
+        return meter_point_dict

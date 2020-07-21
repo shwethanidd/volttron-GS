@@ -61,14 +61,15 @@ import logging
 
 from volttron.platform.agent import utils
 
-from vertex import Vertex
-from interval_value import IntervalValue
-from measurement_type import MeasurementType
-from helpers import *
-from market import Market
-from time_interval import TimeInterval
-from local_asset_model import LocalAsset
-from timer import Timer
+from .vertex import Vertex
+from .interval_value import IntervalValue
+from .measurement_type import MeasurementType
+from .helpers import *
+from .market import Market
+from .time_interval import TimeInterval
+from .local_asset_model import LocalAsset
+from .timer import Timer
+from .market_state import MarketState
 
 utils.setup_logging()
 _log = logging.getLogger(__name__)
@@ -97,11 +98,16 @@ class TccModel(LocalAsset):
         self.quantities = None
         self.tcc_curves = None
         self.prices = None
+        self.building_volttron_agent = None
 
     def set_tcc_curves(self, quantities, prices, curves):
         self.quantities = quantities
-        self.tcc_curves = curves
+        # Ignoring first element since state machine based market does not the correction
+        self.tcc_curves = curves[1:]
         self.prices = prices
+        _log.debug("TCC set_tcc_curves are: q: {}, p: {}, c: {}".format(self.quantities,
+                                                                        self.tcc_curves,
+                                                                        self.prices))
 
     # 191220DJH: This was done pretty well and is a great start to a proper interface between the transactive
     #            network building agent and the complex building control system (i.e., TCC or ILC or ...). The timing
@@ -109,26 +115,72 @@ class TccModel(LocalAsset):
     #            initiate scheduling when it is needed. It seems the forecasts of the TCC asset are hard-coded, and
     #            that will probably have to be fixed if scheduling is to be viable in multiple markets that could have
     #            different numbers of time intervals and different time interval durations, etc.
+    # def schedule_power(self, mkt):
+    #     """
+    #     This function should ask mixmarket to rerun and get back new scheduledPower and curves based on new set of
+    #     marginalPrice. However, because the building already provided the curve in the 1st place, there is no need to
+    #     rerun the mix market...
+    #     """
+    #     _log.debug("TCC tcc_model schedule_power()")
+    #     self.scheduledPowers = []
+    #     time_intervals = mkt.timeIntervals
+    #     if self.tcc_curves is not None:
+    #         # Curves existed, update vertices first
+    #         self.update_vertices(mkt)
+    #
+    #     for i in range(len(time_intervals)):
+    #         value = self.defaultPower
+    #         # if self.quantities is not None and len(self.quantities) > i and self.quantities[i] is not None:
+    #         #     value = -self.quantities[i]
+    #         _log.debug("TCC tcc_model default_power: {}".format(value))
+    #         if self.tcc_curves is not None:
+    #             # Update power at this marginal_price
+    #             marginal_price = find_obj_by_ti(mkt.marginalPrices, time_intervals[i])
+    #             marginal_price = marginal_price.value
+    #             value = production(self, marginal_price, time_intervals[i])  # [avg. kW]
+    #
+    #         iv = IntervalValue(self, time_intervals[i], mkt, MeasurementType.ScheduledPower, value)
+    #         self.scheduledPowers.append(iv)
+    #
+    #     sp = [(x.timeInterval.name, x.value) for x in self.scheduledPowers]
+    #     _log.debug("TCC scheduledPowers are: {}".format(sp))
+
+    # SN: Schedule Power by starting Mix market
     def schedule_power(self, mkt):
-        """
-        This function should ask mixmarket to rerun and get back new scheduledPower and curves based on new set of
-        marginalPrice. However, because the building already provided the curve in the 1st place, there is no need to
-        rerun the mix market...
-        """
+        _log.debug("Market TCC tcc_model schedule_power()")
+        if self.building_volttron_agent is not None and not self.building_volttron_agent.mix_market_running:
+            _log.debug("Market in {} state..Starting building level mix market ".format(mkt.marketState))
+            resend_balanced_prices = False
+            if mkt.marketState == MarketState.DeliveryLead:
+                resend_balanced_prices = True
+            self.building_volttron_agent.start_mixmarket(True, resend_balanced_prices)
+
+    def add_building_volttron_agent(self, building_volttron_agent):
+        self.building_volttron_agent = building_volttron_agent
+
+    # SN: Set Scheduled Power after mix market is done
+    def set_scheduled_power(self, quantities, prices, curves, mkt):
+        self.set_tcc_curves(quantities, prices, curves)
+        _log.debug("Market TCC tcc_model set_scheduled_power()")
         self.scheduledPowers = []
         time_intervals = mkt.timeIntervals
+
         if self.tcc_curves is not None:
             # Curves existed, update vertices first
             self.update_vertices(mkt)
+            self.scheduleCalculated = True
 
         for i in range(len(time_intervals)):
             value = self.defaultPower
             # if self.quantities is not None and len(self.quantities) > i and self.quantities[i] is not None:
             #     value = -self.quantities[i]
-
+            _log.debug("Market TCC tcc_model default_power: {}".format(value))
             if self.tcc_curves is not None:
                 # Update power at this marginal_price
                 marginal_price = find_obj_by_ti(mkt.marginalPrices, time_intervals[i])
+                _log.debug("Market TCC tcc_model i: {}, marginalPrices: {}, time_intervals[i]: {}".format(i,
+                                                                                                          marginal_price,
+                                                                                                          time_intervals[i]))
                 marginal_price = marginal_price.value
                 value = production(self, marginal_price, time_intervals[i])  # [avg. kW]
 
@@ -136,7 +188,11 @@ class TccModel(LocalAsset):
             self.scheduledPowers.append(iv)
 
         sp = [(x.timeInterval.name, x.value) for x in self.scheduledPowers]
-        _log.debug("TCC scheduledPowers are: {}".format(sp))
+        _log.debug("Market TCC scheduledPowers are: {}".format(sp))
+
+        if self.scheduleCalculated:
+            self.calculate_reserve_margin(mkt)
+
 
     def update_vertices(self, mkt):
         if self.tcc_curves is None:
@@ -149,21 +205,23 @@ class TccModel(LocalAsset):
             # 191220DJH: This timing issue concerning the 1st market time interval should disappear when using the
             #            market state machine for network markets.
             # 1st mix-market doesn't have tcc_curves info => keep previous active vertices
-            if self.tcc_curves[0] is None:
-                first_interval_vertices = [iv for iv in self.activeVertices
-                                           if iv.timeInterval.startTime == time_intervals[0].startTime]
-                self.activeVertices = first_interval_vertices
+            # if self.tcc_curves[0] is None:
+            #     first_interval_vertices = [iv for iv in self.activeVertices
+            #                                if iv.timeInterval.startTime == time_intervals[0].startTime]
+            #     self.activeVertices = first_interval_vertices
 
             # 191220DJH: The mixed-market timing seems to be pretty hard-coded. This will not work generally for
             #            multiple network markets having differing interval durations, numbers of intervals, etc.
 
             # After 1st mix-market, we always have tcc_curves for 25 market intervals => clear all previous av
-            else:
-                self.activeVertices = []
+            # else:
+            #     self.activeVertices = []
+
+            self.activeVertices = []
 
             for i in range(len(time_intervals)):
-                if self.tcc_curves[i] is None:
-                    continue
+                # if self.tcc_curves[i] is None:
+                #     continue
                 point1 = self.tcc_curves[i][0].tuppleize()
                 q1 = -point1[0]
                 p1 = point1[1]

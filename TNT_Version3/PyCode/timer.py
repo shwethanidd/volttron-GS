@@ -60,7 +60,7 @@
 from datetime import datetime
 
 
-class Timer:
+class Timer(object):
     created_time = None
     sim_one_hr_in_sec = 1200
     sim_start_time = None

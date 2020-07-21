@@ -2,7 +2,7 @@ from datetime import time
 from ip_occupancy_mode import OccupancyMode
 
 
-class ModeSchedule:
+class ModeSchedule(object):
     TIME_INDEX = 0
     MODE_INDEX = 1
 

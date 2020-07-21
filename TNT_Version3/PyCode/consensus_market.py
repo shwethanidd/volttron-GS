@@ -56,10 +56,10 @@
 
 # }}}
 
-from helpers import find_obj_by_ti, order_vertices
-from market import Market
-from market_types import MarketTypes
-from method import Method
+from .helpers import find_obj_by_ti, order_vertices
+from .market import Market
+from .market_types import MarketTypes
+from .method import Method
 
 
 class ConsensusMarket(Market):

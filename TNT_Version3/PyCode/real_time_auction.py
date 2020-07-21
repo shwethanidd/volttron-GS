@@ -57,10 +57,10 @@
 # }}}
 
 
-from auction import Auction
+from .auction import Auction
 
 
-class RealTimeAuction(object, Auction):
+class RealTimeAuction(Auction):
 
     def __init__(self):
         super(RealTimeAuction, self).__init__()

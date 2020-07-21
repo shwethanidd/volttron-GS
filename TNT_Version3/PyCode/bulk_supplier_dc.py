@@ -60,13 +60,13 @@
 import logging
 from volttron.platform.agent import utils
 
-from helpers import *
-from measurement_type import MeasurementType
-from interval_value import IntervalValue
-from neighbor_model import Neighbor
-from const import *
-from vertex import Vertex
-from timer import Timer
+from .helpers import *
+from .measurement_type import MeasurementType
+from .interval_value import IntervalValue
+from .neighbor_model import Neighbor
+from .const import *
+from .vertex import Vertex
+from .timer import Timer
 
 utils.setup_logging()
 _log = logging.getLogger(__name__)
@@ -361,3 +361,5 @@ class BulkSupplier_dc(Neighbor):
                 # Append the active vertices to the list of active vertices
                 # in the indexed time interval
                 self.activeVertices.extend(interval_values)
+        av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in self.activeVertices]
+        _log.debug("{} bulk_supplier dc model active vertices are: {}".format(self.name, av))

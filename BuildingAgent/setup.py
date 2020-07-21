@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*- {{{
 # vim: set fenc=utf-8 ft=python sw=4 ts=4 sts=4 et:
 
-# Copyright (c) 2017, Battelle Memorial Institute
+# Copyright (c) 2015, Battelle Memorial Institute
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -16,7 +16,7 @@
 #    distribution.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# 'AS IS' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 # LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
 # A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
 # OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
@@ -56,31 +56,37 @@
 
 # }}}
 
+from os import path
+from setuptools import setup, find_packages
 
-class Vertex(object):
-    def __init__(self, marginal_price, prod_cost, power, continuity=True, power_uncertainty=0.0):
-        # Production cost. A dynamic representation of the delivered cost. An ideal is that the cost of electricity
-        # using this price should be equivalent to revenue payments over extended time periods. Local assets and
-        # neighbor "friends" (meaning belonging to the same business entity) may be offered the "recovery cost" that
-        # covers actual costs, but includes no profits. Others can be offered a cost that additionally includes
-        # production surplus (aka "profit"). NOTE that this is stated as absolute dollar ($), not dollars per hour
-        # ($/h).
-        self.cost = prod_cost  # [$] Real & >=0.0
+MAIN_MODULE = 'agent'
 
-        # The signal. The unit price upon which resource decisions should be based.
-        self.marginalPrice = marginal_price  # [$/kWh] Real & >=0.0
+# Find the agent package that contains the main module
+packages = find_packages('.')
+agent_package = ''
+for package in find_packages():
+    # Because there could be other packages such as tests
+    if path.isfile(package + '/' + MAIN_MODULE + '.py') is True:
+        agent_package = package
+if not agent_package:
+    raise RuntimeError('None of the packages under {dir} contain the file '
+                       '{main_module}'.format(main_module=MAIN_MODULE + '.py',
+                                              dir=path.abspath('.')))
 
-        # The averaged interval power
-        # POWER > 0: generation or importation of real power
-        # POWER > 0: consumption or exportation
-        self.power = power  # [avg.kW] Real
+# Find the version number from the main module
+agent_module = agent_package + '.' + MAIN_MODULE
+_temp = __import__(agent_module, globals(), locals(), ['__version__'], 0)
+__version__ = _temp.__version__
 
-        # Relative uncertainty of the included power value. This is not a required property, but it will be useful in
-        # future versions for the treatment of reliability and resiliency. [dimensionless, 0.01 = 1#]
-        self.powerUncertainty = power_uncertainty  # Real & >=0.0
-
-        # Logical continuity flag. This flag should be true if a continuum of power generation, importation,
-        # consumption, or importation exists on both sides of the vertex, or if there is only one vertex. Set false if
-        # production is disallowed between this vertex and either of its neighbor vertices. (This property is not
-        # required and may not be used in early implementations.)
-        self.continuity = continuity  # boolean
+# Setup
+setup(
+    name=agent_package + 'agent',
+    version=__version__,
+    install_requires=['volttron'],
+    packages=packages,
+    entry_points={
+        'setuptools.installation': [
+            'eggsecutable = ' + agent_module + ':main',
+        ]
+    }
+)
