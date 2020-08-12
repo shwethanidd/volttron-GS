@@ -65,6 +65,7 @@ from warnings import warn
 from .timer import Timer
 from .helpers import production
 from .interval_value import IntervalValue
+from .measurement_type import MeasurementType
 
 from volttron.platform.agent import utils
 from volttron.platform.messaging import topics, headers as headers_mod
@@ -90,6 +91,14 @@ class Auction(Market):
         :param my_transactive_node: my transactive node agent object
         :return: None
         """
+
+        # 200730DJH: This will initialize all the marginal price for each time interval using the best available
+        #            strategy. I would have preferred not doing so, but so many logic exceptions have been created by
+        #            not having existing marginal prices. Point 1: The auction object owns prices only for its active
+        #            time intervals. Local assets may predict more future prices if they need to. Point 2: This initial
+        #            marginal price should be replaced by the auction mechanisms.
+        self.check_marginal_prices(my_transactive_node, return_prices=None)
+
         # Set the auction convergence flag false prior to the Negotiation market state.
         self.converged = False
         _log.debug("Market: transition_from_active_to_negotiation")
@@ -176,7 +185,7 @@ class Auction(Market):
 
         if len(upstream_agents) != 1:
             print('Warning: There should be precisely one upstream neighbor for an auction market')
-            warn('There should be precisely one upstream neighbor for an auction market')
+            raise RuntimeWarning('There should be precisely one upstream neighbor for an auction market')
 
         # Initialize a flag true if all downstream bids have been received. An aggregate auction bid can be constructed
         # only after all bids have been received from downstream agents (and from local assets, of course):
@@ -274,13 +283,14 @@ class Auction(Market):
         unassigned_agents = [x for x in my_transactive_node.neighbors if x.upOrDown != Direction.upstream
                                                                                 and x.upOrDown != Direction.downstream]
 
+        _log.debug("while_in_delivery_lead: Here 2")
         for x in range(len(unassigned_agents)):
             _log.warning('Warning: Assigning neighbor ' + unassigned_agents[x].name + ' the downstream direction')
             _log.warning('Assigning neighbor ' + unassigned_agents[x].name + ' the downstream direction')
             unassigned_agents[x].upOrDown = Direction.downstream
 
         if len(upstream_agents) != 1:
-            print('Warning: There should be precisely one upstream neighbor for an auction market')
+            _log.warning('Warning: There should be precisely one upstream neighbor for an auction market')
             warn('There should be precisely one upstream neighbor for an auction market')
 
         # Initialize a flag true if all downstream bids have been received. An aggregate auction bid can be constructed
@@ -291,7 +301,7 @@ class Auction(Market):
         upstream_agent = upstream_agents[0]
 
         if upstream_agent.transactive is True:
-
+            _log.debug("while_in_delivery_lead: Here 3")
             # Create a list of the time interval names among the received transactive signal:
             received_time_intervals = []
 
@@ -301,7 +311,7 @@ class Auction(Market):
                 received_record = upstream_agent.receivedSignal[rts]        # the indexed received record
 
                 received_time_intervals.append(received_record.timeInterval)
-
+            _log.debug("while_in_delivery_lead: Here 4")
             # Check whether any active market time intervals are not among the received record intervals.
             missing_time_intervals = [x.name for x in self.timeIntervals if x.name not in received_time_intervals]
 
@@ -319,38 +329,52 @@ class Auction(Market):
         #            auction market balancing.
 
         if all_received is True:
+            _log.debug("while_in_delivery_lead: Here 5")
             # Update this Neighbor's active vertices, which is entirely completed from its recently received transactive
             # signal and its records.
             upstream_agent.update_vertices(self)
+            _log.debug("while_in_delivery_lead: Here 6")
             # Sum all the agent's active local asset and neighbor vertices and determine the LMP at which local power is
             # balanced.
+            _log.debug("while_in_delivery_lead: Here 7")
             self.balance(my_transactive_node)
             # Have the upstream agent neighbor model now schedule its power, based on the local agent's calculated LMPs.
+            _log.debug("while_in_delivery_lead: Here 8")
             upstream_agent.schedule_power(self)
             # Re-schedule local asset powers now that the local market price is cleared. This may affect flexible assets
             # if the cleared price differs from the predicted one. Inelastic assets will not be affected.
-            # 200618DJH: I regret having to do this, given how long it takes for buildings to complete. Only the
-            # balancing power needs to be found.
-
+            # 200702DJH: This following  code revision allows local assets to find their scheduled power using helper
+            #            method production(), which interpolates among the local assets' active vertices to find the
+            #            power at the cleared market clearing price.
             local_assets = [x for x in my_transactive_node.localAssets]
             for i in range(len(local_assets)):
                 local_asset = local_assets[i]
+                _log.debug("while_in_delivery_lead: Here 9")
                 # local_asset.schedule_power(self) ** COMMENT OUT: TOO CUMBERSOME **
                 for time_interval in self.timeIntervals:
+                    _log.debug("while_in_delivery_lead: Here 10")
                     price = [x.value for x in self.marginalPrices if x.timeInterval == time_interval]
-                    power = production(local_asset, price, time_interval)
-                    local_asset.scheduledPowers.append(IntervalValue(self,
-                                                                     time_interval,
-                                                                     self,
-                                                                     'Scheduled Power',
-                                                                     power))
+                    power = production(local_asset, price[0], time_interval)
+                    local_asset.scheduledPowers.append(IntervalValue(calling_object=self,
+                                                                     time_interval=time_interval,
+                                                                     market=self,
+                                                                     measurement_type=MeasurementType.ScheduledPower,
+                                                                     value=power
+                                                                     )
+                                                       )
 
             # For each downstream agent,
             for x in range(len(downstream_agents)):
-                downstream_agent = downstream_agents[x]                 # the indexed downstream agent
+                _log.debug("while_in_delivery_lead: Here 11")
+                downstream_agent = downstream_agents[x] # the indexed downstream agent
+
+                # 201731DJH: Now that the LMP has been determined, power may be scheduled for this downstream neighbor.
+                downstream_agent.schedule_power(self)
+                _log.debug("while_in_delivery_lead: Here 12")
                 # prepare an aggregated offer for the downstream agent,
                 downstream_agent.prep_transactive_signal(self, my_transactive_node)
                 # and send it a transactive signal (i.e., an offer).
                 _log.debug("SN: while_in_delivery_lead() DOWNSTREAM_AGENT PUBLISH TOPIC: {}".format(downstream_agent.publishTopic))
                 _log.debug("SN: while_in_delivery_lead() sending transactive signal to downstream agent: {}".format(downstream_agent.name))
-                downstream_agent.send_transactive_signal(my_transactive_node, downstream_agent.publishTopic)
+                downstream_agent.send_transactive_signal(my_transactive_node,
+                                                         downstream_agent.publishTopic)

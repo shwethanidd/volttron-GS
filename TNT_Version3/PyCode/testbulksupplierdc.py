@@ -75,145 +75,90 @@ from bulk_supplier_dc import BulkSupplier_dc
 # from const import *
 
 
-def test_update_dc_threshold():
-    print('Running BulkSupplier_dc.test_update_dc_threshold()')
-
-    # Basic configuration for tests:
-    # Create a test object and initialize demand-related properties
-    test_obj = BulkSupplier_dc()
-    test_obj.demandMonth = datetime.now().month  # month(datetime)
-    test_obj.demandThreshold = 1000
-
-    # Create a test market
-    test_mkt = Market()
-
-    # Create and store two time intervals
-    dt = datetime.now()
-    at = dt
-    dur = timedelta(hours=1)  # Hours(1)
-    mkt = test_mkt
-    mct = dt
-    st = dt
-    ti = [TimeInterval(at, dur, mkt, mct, st)]
-    st = st + dur
-    ti.append(TimeInterval(at, dur, mkt, mct, st))
-    test_mkt.timeIntervals = ti
-
-    #  Test case when there is no MeterPoint object
-    test_obj.demandThreshold = 1000
-    test_obj.demandMonth = datetime.now().month  # month(datetime)
-    test_obj.meterPoints = []  # MeterPoint.empty
-
-    # Create and store a couple scheduled powers
-    # iv(1) = IntervalValue(test_obj, ti[0], test_mkt, MeasurementType.ScheduledPower, 900)
-    # iv(2) = IntervalValue(test_obj, ti[1], test_mkt, MeasurementType.ScheduledPower, 900)
-    iv = [
-        IntervalValue(test_obj, ti[0], test_mkt, MeasurementType.ScheduledPower, 900),
-        IntervalValue(test_obj, ti[1], test_mkt, MeasurementType.ScheduledPower, 900)
-    ]
-    test_obj.scheduledPowers = iv
-
-    try:
-        test_obj.update_dc_threshold(test_mkt)
-        print('- the method ran without errors')
-    except RuntimeWarning:
-        print('- the method encountered errors when called')
-
-    assert test_obj.demandThreshold == 1000, '- the method inferred the wrong demand threshold value'
-
-    iv = [
-        IntervalValue(test_obj, ti[0], test_mkt, MeasurementType.ScheduledPower, 1100),
-        IntervalValue(test_obj, ti[1], test_mkt, MeasurementType.ScheduledPower, 900)
-    ]
-    test_obj.scheduledPowers = iv
-
-    try:
-        test_obj.update_dc_threshold(test_mkt)
-        print('- the method ran without errors when there is no meter')
-    except RuntimeWarning:
-        print('- the method encountered errors when there is no meter')
-
-    assert test_obj.demandThreshold == 1100, '- the method did not update the inferred demand threshold value'
-
-    # Test with an appropriate MeterPoint meter
-    # Create and store a MeterPoint test object
-    test_mtr = MeterPoint()
-    test_mtr.measurementType = MeasurementType.AverageDemandkW
-    test_mtr.currentMeasurement = 900
-    test_obj.meterPoints = [test_mtr]
-
-    # Reconfigure the test object for this test:
-    iv = [
-        IntervalValue(test_obj, ti[0], test_mkt, MeasurementType.ScheduledPower, 900),
-        IntervalValue(test_obj, ti[1], test_mkt, MeasurementType.ScheduledPower, 900)
-    ]
-    test_obj.scheduledPowers = iv
-
-    test_obj.demandThreshold = 1000
-    test_obj.demandMonth = datetime.now().month
-
-    # Run the test. Confirm it runs.
-    try:
-        test_obj.update_dc_threshold(test_mkt)
-        print('- the method ran without errors when there is a meter')
-    except RuntimeWarning:
-        print('- the method encountered errors when there is a meter')
-
-    # Check that the old threshold is correctly retained.
-    assert test_obj.demandThreshold == 1000, \
-                            '- the method failed to keep the correct demand threshold value when there is a meter'
-
-    # Reconfigure the test object with a lower current threshold
-    iv = [
-        IntervalValue(test_obj, ti[0], test_mkt, MeasurementType.ScheduledPower, 900),
-        IntervalValue(test_obj, ti[1], test_mkt, MeasurementType.ScheduledPower, 900)]
-    test_obj.scheduledPowers = iv
-    test_obj.demandThreshold = 800
-
-    # Run the test.
-    test_obj.update_dc_threshold(test_mkt)
-
-    # Check that a new, higher demand threshold was set.
-    assert test_obj.demandThreshold == 900, \
-                                    '- the method failed to update the demand threshold value when there is a meter'
-
-    # Test rollover to new month
-    # Configure the test object
-    last_month = dt.month - 1
-    if last_month == 0:
-        last_month = 12
-    test_obj.demandMonth = last_month  # month(datetime - days(31))  # prior month
-    test_obj.demandThreshold = 1000
-    test_obj.scheduledPowers[0].value = 900
-    test_obj.scheduledPowers[1].value = 900
-    test_obj.meterPoints = []  # MeterPoint.empty
-    test_obj.demandThresholdCoef = 0.8
-
-    # Run the test
-    try:
-        test_obj.update_dc_threshold(test_mkt)
-        print('  - The method ran without errors')
-    except RuntimeWarning:
-        print('  - ERRORS ENCOUNTERED')
-
-    # See if the demand threshold was reset at the new month.
-    assert test_obj.demandThreshold == test_obj.demandThresholdCoef * 1000, \
-        '- the method did not reduce the threshold properly in a new month'
-
-    # Success
-    print('test_update_dc_threshold() ran to completion.\n')
-
-
 def test_update_vertices():
     print('Running BulkSupplier_dc.test_update_vertices()')
-    print('  This test is not completed yet')
 
-    # Success
+    print('Case 1: Expect two active vertices when neither demand charges nor losses are in play. ')
+    dt = datetime.now()
+    dt.replace(hour=1)  # an example LLH hour
+    test_neighbor = BulkSupplier_dc()
+    test_neighbor.maximumPower = 100
+    test_neighbor.minimumPower = 0
+    test_neighbor.lossFactor = 0
+    test_neighbor.demandRate = 0  # CAUTION: the method makes sure this is as in the supplier table.
+    test_neighbor.demandThreshold = 101  # Placing this just above the vertices' power range
+    test_market = Market()
+    test_market.neighbors = [test_neighbor]
+    test_time_interval = TimeInterval(activation_time=dt,
+                                      duration=timedelta(hours=1),
+                                      market=test_market,
+                                      market_clearing_time=dt,
+                                      start_time=dt)
+    test_market.timeIntervals = [test_time_interval]
+
+    try:
+        test_neighbor.update_vertices(test_market)
+        print('  - The method ran without errors.')
+    except RuntimeWarning as message:
+        print('  - ERRORS ENCOUNTERED: ' + message)
+
+    assert len(test_neighbor.activeVertices) == 2, 'An unexpected number of active vertices were found: ' \
+                                                   + str(len(test_neighbor.activeVertices))
+    assert test_neighbor.activeVertices[0].value.power in [0, 100], 'First active vertex power was not as expected.'
+    assert test_neighbor.activeVertices[1].value.power in [0, 100], 'Second active vertex power was not as expected.'
+    assert test_neighbor.activeVertices[0].value.marginalPrice == 0.04077, \
+        'First active vertex marginal price is not as expected: ' \
+        + str(test_neighbor.activeVertices[0].value.marginalPrice)
+    assert test_neighbor.activeVertices[1].value.marginalPrice == 0.04077, \
+        'Second active vertex marginal price is not as expected: ' \
+        + str(test_neighbor.activeVertices[1].value.marginalPrice)
+
+    print('Case 2: Same as Case 1, but let demand charges be in play. ')
+    dt = datetime.now()
+    dt.replace(hour=10)  # an example HLH hour
+    test_neighbor = BulkSupplier_dc()
+    test_neighbor.maximumPower = 100
+    test_neighbor.minimumPower = 0
+    test_neighbor.lossFactor = 0
+    test_neighbor.demandRate = 0  # CAUTION: the method makes sure this is as in the supplier table.
+    test_neighbor.demandThreshold = 50  # Placing this in the middle of the vertices' power range
+    test_market = Market()
+    test_market.neighbors = [test_neighbor]
+    test_time_interval = TimeInterval(activation_time=dt,
+                                      duration=timedelta(hours=1),
+                                      market=test_market,
+                                      market_clearing_time=dt,
+                                      start_time=dt)
+    test_market.timeIntervals = [test_time_interval]
+
+    try:
+        test_neighbor.update_vertices(test_market)
+        print('  - The method ran without errors.')
+    except RuntimeWarning as message:
+        print('  - ERRORS ENCOUNTERED: ' + message)
+
+    # 200806DJH: The method now orders the resulting vertices by power and marginal price, which makes it easier to
+    # automate testing.
+    assert len(test_neighbor.activeVertices) == 4, 'An unexpected number of active vertices were found: ' \
+                                                   + str(len(test_neighbor.activeVertices))
+    assert test_neighbor.activeVertices[0].value.power == 0, 'First active vertex power was not as expected: ' \
+                                                             + str(test_neighbor.activeVertices[0].value.power)
+    assert test_neighbor.activeVertices[1].value.power == 50, 'Second active vertex power was not as expected: ' \
+                                                              + str(test_neighbor.activeVertices[1].value.power)
+    assert test_neighbor.activeVertices[2].value.power == 50, 'Third active vertex power was not as expected: '\
+                                                              + str(test_neighbor.activeVertices[2].value.power)
+    assert test_neighbor.activeVertices[3].value.power == 100, 'Fourth active vertex power was not as expected: '\
+                                                               + str(test_neighbor.activeVertices[3].value.power)
+
+    print('  CAUTION: Actual prices are drawn from a price file, so expected results may change month by month.')
+    assert [test_neighbor.activeVertices[x].value.marginalPrice for x in range(4)] == \
+           [0.04077, 0.04077, 11.02077, 11.02077], 'Marginal prices were not as expected.'
+
     print('test_update_vertices() ran to completion.\n')
 
 
 if __name__ == '__main__':
     print('Running tests in testbulksupplierdc.py\n')
-    test_update_dc_threshold()
+    # 200804DJH: test_update_dc_threshold is within superclass Neighbor and will be tested there, not here.
     test_update_vertices()
     print('Tests in testbulksupplierdc.py ran to completion.\n')

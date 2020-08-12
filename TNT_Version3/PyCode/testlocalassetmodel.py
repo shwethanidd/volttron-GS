@@ -813,10 +813,10 @@ def test_get_extended_prices():
     #            Thereafter, modeled prices are assigned through the top of the hour that exceeds the scheduling
     #            horizon. Therefore, there is some variability in the count of
     assert len(price_set) == 4 or len(price_set) == 5, \
-        ('An unexpected number', len(price_set), ' of prices was found')
+                                                    ('An unexpected number', len(price_set), ' of prices was found')
     assert price_set[0].value == price0, 'The first price was not correct'
     assert all([price_set[x].value == avg_price for x in range(1, len(price_set))]), \
-        'Prices 1 - 4 were not correct'
+                                                                                        'Prices 1 - 4 were not correct'
 
     # ******************************************************************************************************************
     print("  Case 5. The market's default price value.")  # ************************************************************

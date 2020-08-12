@@ -402,7 +402,7 @@ class CityAgent(Agent, TransactiveNode):
 
         # Presume first delivery hour starts at 10:00 each day:
         #delivery_start_time = current_time.replace(hour=10, minute=0, second=0, microsecond=0)
-        delivery_start_time = current_time.replace(hour=1, minute=45, second=0, microsecond=0)
+        delivery_start_time = current_time.replace(hour=2, minute=0, second=0, microsecond=0)
 
         # The market clearing time must occur a delivery lead time prior to delivery:
         market.marketClearingTime = delivery_start_time - market.deliveryLeadTime

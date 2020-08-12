@@ -115,7 +115,7 @@ def test_assign_system_vertices():
         print(' - ERRORS WERE ENCOUNTERED:', warning)
 
     assert len(test_market.activeVertices) == 2, \
-        ('Two vertices should have been assigned; ' + str(len(test_market.activeVertices)) + ' were assigned.')
+                ('Two vertices should have been assigned; ' + str(len(test_market.activeVertices)) + ' were assigned.')
     assert test_market.activeVertices[0].value.power == -4, 'The first vertex should have been at -4 kW.'
     assert test_market.activeVertices[1].value.power == 6, 'The second vertex should have been at 6 kW.'
     assert test_market.activeVertices[0].value.marginalPrice == 0.02, 'The first vertex should have been at 0.02 $/kWh.'
@@ -153,6 +153,7 @@ def test_balance():
     test_asset.activeVertices = [interval_value3]
 
     test_market.method = Method.Interpolation
+    test_market.marginalPrices = [IntervalValue(test_market, test_interval, test_market, 'marginalPrice', 0.06)]
 
     assert vertex1.power == 0, 'The first vertex was configured at 0 kW.'
     assert vertex1.marginalPrice == 0.02, 'The first vertex was configured at 0.02 $/kWh.'
@@ -167,7 +168,7 @@ def test_balance():
         print(' - ERRORS WERE ENCOUNTERED:', warning)
 
     assert len(test_market.activeVertices) == 2, \
-        ('Two vertices should have been assigned; ' + str(len(test_market.activeVertices)) + ' were assigned.')
+                ('Two vertices should have been assigned; ' + str(len(test_market.activeVertices)) + ' were assigned.')
     assert test_market.activeVertices[0].value.power == -4, 'The first vertex should have been at -4 kW.'
     assert test_market.activeVertices[1].value.power == 6, 'The second vertex should have been at 6 kW.'
     assert test_market.activeVertices[0].value.marginalPrice == 0.02, 'The first vertex should have been at 0.02 $/kWh.'

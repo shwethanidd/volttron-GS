@@ -65,6 +65,9 @@ from datetime import datetime, timedelta
 from market_state import MarketState
 from neighbor_model import Neighbor
 from direction import Direction
+from vertex import Vertex
+from interval_value import IntervalValue
+from transactive_record import TransactiveRecord
 
 
 def test_while_in_negotiation():
@@ -175,19 +178,130 @@ def test_while_in_market_lead():
 
 
 def test_while_in_delivery_lead():
-    # TODO: Finish test_while_in_delivery_lead()
+    # 200702DJH: Drafting unit test. Shwetha found issues with this method: (1) The complex building power-scheduling
+    #            process is being unnecessarily restarted. (2) The Auction is not being populated with cleared
+    #            locational marginal prices.
+    #            In an auction, local assets should be required to use their existing flexibility (i.e., active vertices
+    #            that were already bid into the local and upstream auctions.
     print('  Running test_while_in_delivery_lead().')
-    print('    The test is not yet completed.')
-    print('    CASE 1:')
-    print('    CASE 2:')
-    print('    CASE 3:')
+
+    # CASE 1 ***********************************************************************************************************
+    print('    CASE 1: Typical, simple case, but with the upstream neighbor\'s active vertices already updated.')  # ***
+    print('  Note: This also tests method balance().')
+    print('  200804DJH: This case is for an upstrean NON-transactive neighbor that gets its vertices '
+          'from default vertices')
+    pinf = float('inf')
+    mtn = TransactiveNode()
+    now = datetime.now()
+    test_neighbor = Neighbor()
+    test_neighbor.transactive = False
+    test_neighbor.upOrDown = Direction.upstream
+    test_neighbor.scheduledPowers = []
+    mtn.neighbors = [test_neighbor]
+    test_asset = LocalAsset()
+    mtn.localAssets = [test_asset]
+    test_auction = Auction()
+    test_auction.marginalPrices = []
+    mtn.markets = test_auction
+    test_time_interval = TimeInterval(now, timedelta(hours=1), test_auction, now, now)
+    test_auction.timeIntervals = [test_time_interval]
+    test_vertex1 = Vertex(0.1, 0, 0)
+    test_vertex2 = Vertex(0.2, 0, 100)
+    test_vertex3 = Vertex(pinf, 0, -50)
+    test_interval_value1 = IntervalValue(test_neighbor, test_time_interval, test_auction, 'active vertex',
+                                         test_vertex1)
+    test_interval_value2 = IntervalValue(test_neighbor, test_time_interval, test_auction, 'active vertex',
+                                         test_vertex2)
+    test_interval_value3 = IntervalValue(test_auction, test_time_interval, test_auction, 'active vertex',
+                                         test_vertex3)
+    test_neighbor.defaultVertices = [test_vertex1, test_vertex2]
+    test_neighbor.activeVertices = []
+    test_asset.activeVertices = [test_interval_value3]
+    test_neighbor.demand_rate = 0
+    test_neighbor.lossFactor = 0
+
+    assert len(test_auction.marginalPrices) == 0, 'The test should start with the auction having no marginal prices'
+    assert len(test_neighbor.scheduledPowers) == 0, 'The upstream neighbor should initially have no scheduled powers.'
+    assert len(test_asset.scheduledPowers) == 0, 'The local asset should be configured with no scheduled powers.'
+
+    try:
+        test_auction.while_in_delivery_lead(mtn)
+        print('    - The method ran without errors')
+    except RuntimeWarning:
+        print('    - ERRORS ENCOUNTERED')
+
+    assert len(test_auction.marginalPrices) == 1, 'The auction should have created precisely one marginal price.'
+    assert round(test_auction.marginalPrices[0].value, 4) == 0.1500, \
+        ['The interpolated price should be 0.15 in this case, not ' + str(test_auction.marginalPrices[0].value) + '.']
+    assert len(test_neighbor.scheduledPowers) == 1, 'The upstream neighbor should have one scheduled power assigned.'
+    assert round(test_neighbor.scheduledPowers[0].value, 4) == 50.0000, \
+            ['The upstream neighbor\'s scheduled power should be 50 kW, not '
+                            + str(round(test_neighbor.scheduledPowers[0].value, 4)) + '']
+    assert len(test_asset.scheduledPowers) == 1, 'The local asset should have found a power at the cleared market price.'
+
+    # CASE 2 ***********************************************************************************************************
+    print('    CASE 2: Same as Case 1, '
+          'but the upstream neighbor\'s active vertices must be found from transactive signals.')
+    print('  Note: This also tests method balance().')
+    pinf = float('inf')
+    mtn = TransactiveNode()
+    now = datetime.now()
+    test_neighbor = Neighbor()
+    test_neighbor.upOrDown = Direction.upstream
+    test_neighbor.transactive = True
+    test_neighbor.scheduledPowers = []
+    test_neighbor.maximumPower = 100  # Assignment of maximumPower = 0 may lead to divide-by-0 error.
+    test_neighbor.lossFactor = 0  # Losses are turned off so that the interpolation may be easily calculated.
+    mtn.neighbors = [test_neighbor]
+    test_asset = LocalAsset()
+    mtn.localAssets = [test_asset]
+    test_auction = Auction()
+    test_auction.marginalPrices = []
+    mtn.markets = test_auction
+    test_time_interval = TimeInterval(now, timedelta(hours=1), test_auction, now, now)
+    test_auction.timeIntervals = [test_time_interval]
+    test_vertex1 = Vertex(0.1, 0, 0)
+    test_vertex2 = Vertex(0.2, 0, 100)
+    test_vertex3 = Vertex(pinf, 0, -50)
+    test_interval_value1 = IntervalValue(test_neighbor, test_time_interval, test_auction, 'active vertex',
+                                         test_vertex1)
+    test_interval_value2 = IntervalValue(test_neighbor, test_time_interval, test_auction, 'active vertex',
+                                         test_vertex2)
+    test_interval_value3 = IntervalValue(test_auction, test_time_interval, test_auction, 'active vertex',
+                                         test_vertex3)
+    test_neighbor.activeVertices = []  # THIS IS DIFFERENT FROM CASE 1 ************************************************
+    test_neighbor.receivedSignal = [TransactiveRecord(test_time_interval, 1, 0.1, 0),
+                                                                TransactiveRecord(test_time_interval, 2, 0.2, 100)]
+    test_asset.activeVertices = [test_interval_value3]
+
+    assert len(test_auction.marginalPrices) == 0, 'The test should start with the auction having no marginal prices'
+    assert len(test_neighbor.scheduledPowers) == 0, 'The upstream neighbor should initially have no scheduled powers.'
+    assert len(test_neighbor.activeVertices) == 0, \
+                                        'This case should start with no active vertices for the upstream neighbor'
+    assert len(test_neighbor.receivedSignal) == 2, \
+                                            'This case should begin with the upstream neighbor assigned 2 records.'
+
+    try:
+        test_auction.while_in_delivery_lead(mtn)
+        print('    - The method ran without errors')
+    except RuntimeWarning:
+        print('    - ERRORS ENCOUNTERED')
+
+    assert len(test_auction.marginalPrices) == 1, 'The auction should have created precisely one marginal price.'
+    assert round(test_auction.marginalPrices[0].value, 4) == 0.1500, \
+        ['The interpolated price should be 0.15 in this case, not ' + str(test_auction.marginalPrices[0].value) + '.']
+    assert len(test_neighbor.scheduledPowers) == 1, 'The upstream neighbor should have one scheduled power assigned.'
+    assert round(test_neighbor.scheduledPowers[0].value, 4) == 50.0000, \
+            ['The upstream neighbor\'s scheduled power should be 50 kW, not '
+                            + str(round(test_neighbor.scheduledPowers[0].value, 4)) + '']
+
     print('  test_while_in_delivery_lead() ran to completion.\n')
     pass
 
 
 if __name__ == '__main__':
     print('Running tests in testauction.py\n')
-    test_while_in_delivery_lead()
     test_while_in_market_lead()
     test_while_in_negotiation()
+    test_while_in_delivery_lead()
     print("Tests in testauction.py ran to completion.\n")

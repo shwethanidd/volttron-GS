@@ -82,7 +82,7 @@ class DayAheadAuction(Auction):
                       x.marketSeriesName == self.marketSeriesName][0]
 
         # Something is seriously wrong if the recently instantiated market cannot be found. Raise an error and stop.
-        if market is None or len(market) == 0:
+        if market is None:
             raise ('No predecessor of ' + self.name + ' could be found.')
 
         # Gather all the day-ahead market period start times and order them.

@@ -58,7 +58,7 @@
 
 
 class Vertex(object):
-    def __init__(self, marginal_price, prod_cost, power, continuity=True, power_uncertainty=0.0):
+    def __init__(self, marginal_price, prod_cost, power, continuity=True, power_uncertainty=0.0, record=0):
         # Production cost. A dynamic representation of the delivered cost. An ideal is that the cost of electricity
         # using this price should be equivalent to revenue payments over extended time periods. Local assets and
         # neighbor "friends" (meaning belonging to the same business entity) may be offered the "recovery cost" that
@@ -84,3 +84,5 @@ class Vertex(object):
         # production is disallowed between this vertex and either of its neighbor vertices. (This property is not
         # required and may not be used in early implementations.)
         self.continuity = continuity  # boolean
+
+        self.record = record  # an integer

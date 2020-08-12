@@ -397,7 +397,7 @@ class CampusAgent(Agent, TransactiveNode):
 
         # Presume first delivery hour starts at 10:00 each day:
         #delivery_start_time = current_time.replace(hour=10, minute=0, second=0, microsecond=0)
-        delivery_start_time = current_time.replace(hour=1, minute=45, second=0, microsecond=0)
+        delivery_start_time = current_time.replace(hour=2, minute=0, second=0, microsecond=0)
 
         # The market clearing time must occur a delivery lead time prior to delivery:
         market.marketClearingTime = delivery_start_time - market.deliveryLeadTime
@@ -429,7 +429,7 @@ class CampusAgent(Agent, TransactiveNode):
 
     def make_city_neighbor(self):
         # 191219DJH: There are no longer separate neighbor object and model classes.
-        city = Neighbor()
+        city = Neighbor(demand_rate=0.0)
         city.name = 'CoR'
         city.description = 'City of Richland (COR) electricity supplier node'
         city.maximumPower = 20000                                   # Remember loads have negative power [signed avg.kW]

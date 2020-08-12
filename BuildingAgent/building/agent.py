@@ -105,13 +105,13 @@ def setup_logging(name, log_file, level=logging.DEBUG):
 
 # ep_res_path = '/Users/ngoh511/Documents/projects/PycharmProjects/transactivenetwork/TNSAgent/tns/test_data/energyplus.txt'
 
-
-mixmarket_log = '/home/volttron/volttron/mixmarket'
-if not os.path.exists(mixmarket_log):
-    _log2 = setup_logging('mixmarket', mixmarket_log + '.log')
-else:
-    temp = str(uuid.uuid4())
-    _log2 = setup_logging('mixmarket', mixmarket_log + temp + '.log')
+#
+# mixmarket_log = '/home/volttron/volttron/mixmarket'
+# if not os.path.exists(mixmarket_log):
+#     _log2 = setup_logging('mixmarket', mixmarket_log + '.log')
+# else:
+#     temp = str(uuid.uuid4())
+#     _log2 = setup_logging('mixmarket', mixmarket_log + temp + '.log')
 
 __version__ = '0.1'
 
@@ -179,12 +179,12 @@ class BuildingAgent(MarketAgent, TransactiveNode):
             #     for line in fh:
             #         self.ep_lines.append(line)
 
-        _log2.debug("Mixmarket for agent {}:".format(self.name))
+        #_log2.debug("Mixmarket for agent {}:".format(self.name))
         self._stop_agent = False
         self.elastic_load = None
         self._mix_market_done = [False]*24
         self._building_market_prices = [None]*25
-        self.cleared_price_topic = 'tnc/cleared_price'
+        self.cleared_price_topic = 'tnc/cleared_prices'
         # New TNT db topics
         self.local_asset_topic = "{}/{}/local_assets".format(self.db_topic, self.name)
         self.neighbor_topic = "{}/{}/neighbors".format(self.db_topic, self.name)
@@ -251,8 +251,8 @@ class BuildingAgent(MarketAgent, TransactiveNode):
             # Send cleared price to building level assets
             self.send_cleared_price(self.markets[0], supply_curves)
 
-        for idx, p in enumerate(self.markets[0].marginalPrices):
-            _log.debug("new_supply_signal: At {} Market marginal prices are: {}".format(self.name, p.value))
+        # for idx, p in enumerate(self.markets[0].marginalPrices):
+        #     _log.debug("new_supply_signal: At {} Market marginal prices are: {}".format(self.name, p.value))
 
     def send_cleared_price(self, market, supply_curves):
         # Get new prices (expected 25 values: current hour + next 24)
@@ -270,7 +270,8 @@ class BuildingAgent(MarketAgent, TransactiveNode):
         self.vip.pubsub.publish(peer='pubsub',
                                 topic=self.cleared_price_topic,
                                 message={"prices": self.prices[-24:],
-                                         "Date": format_timestamp(now)})
+                                         "Date": format_timestamp(now),
+                                         "correction_market": False})
 
     def new_demand_signal(self, peer, sender, bus, topic, headers, message):
         mtrs = self.campus.meterPoints
@@ -285,8 +286,8 @@ class BuildingAgent(MarketAgent, TransactiveNode):
             if Timer.get_cur_time().minute >= 58:
                 bldg_meter.update_avg()
 
-        for idx, p in enumerate(self.markets[0].marginalPrices):
-            _log.debug("new_demand_signal: At {} Market marginal prices are: {}".format(self.name, p.value))
+        # for idx, p in enumerate(self.markets[0].marginalPrices):
+        #     _log.debug("new_demand_signal: At {} Market marginal prices are: {}".format(self.name, p.value))
 
     def near_end_of_hour(self, now):
         near_end_of_hour = False
@@ -340,7 +341,11 @@ class BuildingAgent(MarketAgent, TransactiveNode):
             _log.debug("Building start_mixMarket: here1")
             # Get new prices (expected 25 values: current hour + next 24)
             prices = market.marginalPrices
-
+            initial_prices = market.marginalPrices
+            prices_tuple = list()
+            for x in range(len(initial_prices)):
+                avg_price, std_dev = market.model_prices(initial_prices[x].timeInterval.startTime)
+                prices_tuple.append((avg_price, std_dev))
             # There is a case where the balancing happens at the end of the hour and continues to the next hour, which
             # creates 26 values. Get the last 25 values.
             prices = prices[-25:]
@@ -357,7 +362,7 @@ class BuildingAgent(MarketAgent, TransactiveNode):
                 if len(self.informationServiceModels)>0:
                     weather_service = self.informationServiceModels[0]
                     weather_service.update_information(market)
-                _log.debug("At market START Market marginal prices are: {}".format(self.prices))
+                #_log.debug("At market START Market marginal prices are: {}".format(self.prices))
                 if weather_service is None:
                     self.vip.pubsub.publish(peer='pubsub',
                                             topic='mixmarket/start_new_cycle',
@@ -370,6 +375,7 @@ class BuildingAgent(MarketAgent, TransactiveNode):
                     self.vip.pubsub.publish(peer='pubsub',
                                             topic='mixmarket/start_new_cycle',
                                             message={"prices": self.prices[-24:],
+                                                     "price_info": prices_tuple,
                                                      "temp": temps,
                                                      "Date": format_timestamp(now)})
 
@@ -450,7 +456,7 @@ class BuildingAgent(MarketAgent, TransactiveNode):
 
         # Presume first delivery hour starts at 10:00 each day:
         #delivery_start_time = current_time.replace(hour=10, minute=0, second=0, microsecond=0)
-        delivery_start_time = current_time.replace(hour=1, minute=45, second=0, microsecond=0)
+        delivery_start_time = current_time.replace(hour=2, minute=0, second=0, microsecond=0)
 
         # The market clearing time must occur a delivery lead time prior to delivery:
         market.marketClearingTime = delivery_start_time - market.deliveryLeadTime
@@ -482,7 +488,7 @@ class BuildingAgent(MarketAgent, TransactiveNode):
 
     def make_campus_neighbor(self):
         # 191219DJH: There are no longer separate object and model neighbor classes.
-        campus = Neighbor()
+        campus = Neighbor(demand_rate=0.0)
         campus.name = 'PNNL_Campus'
         campus.description = 'PNNL_Campus'
         campus.maximumPower = self.max_deliver_capacity

@@ -56,8 +56,10 @@
 
 # }}}
 
+from enum import Enum
 
-class Direction(object):
+
+class Direction(Enum):
     bidirectional = 1
     downstream = 2
     unknown = 3
