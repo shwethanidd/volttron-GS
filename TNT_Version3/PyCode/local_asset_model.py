@@ -812,9 +812,11 @@ class LocalAsset(object):
         local_asset_dict = {
             "name": self.name,
             "description": self.description,
+            "transitionCosts": self.transitionCosts,
             "location": self.location,
-            "costParameters": self.costParameters,
+            # "costParameters": list(self.costParameters),
             "defaultPower": self.defaultPower,
+            #"defaultVertices": self.defaultVertices,
             "engagementCost": self.engagementCost,
             "maximumPower": self.maximumPower,
             "minimumPower": self.minimumPower

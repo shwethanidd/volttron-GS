@@ -1390,13 +1390,11 @@ class Neighbor(object):
                                                           'start_of_cycle': start_of_cycle,
                                                           'fail_to_converged': fail_to_converged})
 
-        # for record in transactive_records:
-        #     # Publish transactive record to be stored in historian
-        #     topic = this_transactive_node.transactive_record_topic
-        #     msg = record.getDict()
-        #     headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
-        #     this_transactive_node.vip.pubsub.publish(peer='pubsub', topic=topic,
-        #                                              headers=headers, message=msg)
+        topic = this_transactive_node.transactive_record_topic
+        _log.debug("send_transactive signal: {}, msg: {}".format(topic, msg))
+        headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
+        this_transactive_node.vip.pubsub.publish(peer='pubsub', topic=topic,
+                                                     headers=headers, message=msg)
 
         # Save the sent TransactiveRecord messages (i.e., sentSignal) as a copy of the calculated set that was drawn
         # upon by this method (i.e., mySignal).
@@ -1773,6 +1771,17 @@ class Neighbor(object):
 
         return vertices
 
+    def getDict(self):
+        neighbor_dict = {
+            "convergenceThreshold": self.convergenceThreshold,
+            "description": self.description,
+            "effectiveImpedance": self.effectiveImpedance,
+            "friend": self.friend,
+            "isTransactive": self.transactive,
+            "name": self.name
+        }
+
+        return neighbor_dict
 
 if __name__ == '__main__':
     nm = Neighbor()
