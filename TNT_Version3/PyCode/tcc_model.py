@@ -151,9 +151,9 @@ class TccModel(LocalAsset):
         if self.building_volttron_agent is not None and not self.building_volttron_agent.mix_market_running:
             _log.debug("Market in {} state..Starting building level mix market ".format(mkt.marketState))
             resend_balanced_prices = False
-            if mkt.marketState == MarketState.DeliveryLead:
-                resend_balanced_prices = True
-            self.building_volttron_agent.start_mixmarket(True, resend_balanced_prices)
+            # if mkt.marketState == MarketState.DeliveryLead:
+            #     resend_balanced_prices = True
+            self.building_volttron_agent.start_mixmarket(True, resend_balanced_prices, mkt)
 
     def add_building_volttron_agent(self, building_volttron_agent):
         self.building_volttron_agent = building_volttron_agent
@@ -162,7 +162,10 @@ class TccModel(LocalAsset):
     def set_scheduled_power(self, quantities, prices, curves, mkt):
         self.set_tcc_curves(quantities, prices, curves)
         _log.debug("Market TCC tcc_model set_scheduled_power()")
-        self.scheduledPowers = []
+        # 200929DJH: This was problematic in Version 3 because there exist perfectly valid scheduled powers in other
+        #            markets. Instead, let's calculate any new scheduled powers and eliminate only the scheduled powers
+        #            that exist in expired markets.
+        #self.scheduledPowers = []
         time_intervals = mkt.timeIntervals
 
         if self.tcc_curves is not None:
@@ -171,28 +174,29 @@ class TccModel(LocalAsset):
             self.scheduleCalculated = True
 
         for i in range(len(time_intervals)):
+            time_interval = time_intervals[i]
             value = self.defaultPower
             # if self.quantities is not None and len(self.quantities) > i and self.quantities[i] is not None:
             #     value = -self.quantities[i]
             _log.debug("Market TCC tcc_model default_power: {}".format(value))
             if self.tcc_curves is not None:
                 # Update power at this marginal_price
-                marginal_price = find_obj_by_ti(mkt.marginalPrices, time_intervals[i])
-                _log.debug("Market TCC tcc_model i: {}, marginalPrices: {}, time_intervals[i]: {}".format(i,
-                                                                                                          marginal_price,
-                                                                                                          time_intervals[i]))
+                marginal_price = find_obj_by_ti(mkt.marginalPrices, time_interval)
                 marginal_price = marginal_price.value
-                value = production(self, marginal_price, time_intervals[i])  # [avg. kW]
+                value = production(self, marginal_price, time_interval)  # [avg. kW]
 
-            iv = IntervalValue(self, time_intervals[i], mkt, MeasurementType.ScheduledPower, value)
+            iv = IntervalValue(self, time_interval, mkt, MeasurementType.ScheduledPower, value)
             self.scheduledPowers.append(iv)
+
+        # 200929DJH: This following line is needed to make sure the list of scheduled powers does not grow indefinitely.
+        #            Scheduled powers are retained only if their markets have not expired.
+        self.scheduledPowers = [x for x in self.scheduledPowers if x.market.marketState != MarketState.Expired]
 
         sp = [(x.timeInterval.name, x.value) for x in self.scheduledPowers]
         _log.debug("Market TCC scheduledPowers are: {}".format(sp))
 
         if self.scheduleCalculated:
             self.calculate_reserve_margin(mkt)
-
 
     def update_vertices(self, mkt):
         if self.tcc_curves is None:
@@ -205,23 +209,32 @@ class TccModel(LocalAsset):
             # 191220DJH: This timing issue concerning the 1st market time interval should disappear when using the
             #            market state machine for network markets.
             # 1st mix-market doesn't have tcc_curves info => keep previous active vertices
+            # 200925DJH: I don't think this next code is relevant any longer. The same effect can be had by simply
+            #            replacing only those active vertices for which tcc_curves exist. Commenting out.
             # if self.tcc_curves[0] is None:
+            #
+            #     # first_interval_vertices = [iv for iv in self.activeVertices
+            #     #                           if iv.timeInterval.startTime == time_intervals[0].startTime]
             #     first_interval_vertices = [iv for iv in self.activeVertices
-            #                                if iv.timeInterval.startTime == time_intervals[0].startTime]
+            #                                if iv.timeInterval == time_intervals[0]]
             #     self.activeVertices = first_interval_vertices
-
-            # 191220DJH: The mixed-market timing seems to be pretty hard-coded. This will not work generally for
-            #            multiple network markets having differing interval durations, numbers of intervals, etc.
-
-            # After 1st mix-market, we always have tcc_curves for 25 market intervals => clear all previous av
+            #
+            # # 191220DJH: The mixed-market timing seems to be pretty hard-coded. This will not work generally for
+            # #            multiple network markets having differing interval durations, numbers of intervals, etc.
+            #
+            # # After 1st mix-market, we always have tcc_curves for 25 market intervals => clear all previous av
             # else:
             #     self.activeVertices = []
 
-            self.activeVertices = []
+            #self.activeVertices = []
 
             for i in range(len(time_intervals)):
-                # if self.tcc_curves[i] is None:
-                #     continue
+                if self.tcc_curves[i] is None:
+                    continue
+                # 200925DJH: Clean up active vertices that are to be replaced. This should be fine in Version 3 because
+                #            time intervals are unique to their markets.
+                time_interval = time_intervals[i]
+                self.activeVertices = [x for x in self.activeVertices if x.timeInterval != time_interval]
                 point1 = self.tcc_curves[i][0].tuppleize()
                 q1 = -point1[0]
                 p1 = point1[1]
@@ -230,13 +243,17 @@ class TccModel(LocalAsset):
                 p2 = point2[1]
 
                 v1 = Vertex(p1, 0, q1)
-                iv1 = IntervalValue(self, time_intervals[i], mkt, MeasurementType.ActiveVertex, v1)
+                iv1 = IntervalValue(self, time_interval, mkt, MeasurementType.ActiveVertex, v1)
                 self.activeVertices.append(iv1)
 
                 if q2 != q1:
                     v2 = Vertex(p2, 0, q2)
                     iv2 = IntervalValue(self, time_intervals[i], mkt, MeasurementType.ActiveVertex, v2)
                     self.activeVertices.append(iv2)
+
+        # 200929DJH: This is a good place to make sure the list of active vertices is trimmed and does not grow
+        #            indefinitely.
+        self.activeVertices = [x for x in self.activeVertices if x.market.marketState != MarketState.Expired]
 
         av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in self.activeVertices]
         _log.debug("TCC active vertices are: {}".format(av))

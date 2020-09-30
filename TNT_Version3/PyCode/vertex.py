@@ -86,3 +86,11 @@ class Vertex(object):
         self.continuity = continuity  # boolean
 
         self.record = record  # an integer
+
+    def getDict(self):
+        vertex_dict = {
+            "marginalPrice": self.marginalPrice,
+            "power": self.power,
+            "record": self.record
+        }
+        return vertex_dict

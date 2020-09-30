@@ -74,7 +74,7 @@ from .time_interval import TimeInterval
 from .local_asset_model import LocalAsset
 from .temperature_forecast_model import TemperatureForecastModel
 from .vertex import Vertex
-
+from .market_state import MarketState
 
 class OpenLoopRichlandLoadPredictor(LocalAsset, object):
     # OPENLOOPRICHLANDLOADPREDICTOR - predicted electrical load of the City of
@@ -402,6 +402,8 @@ class OpenLoopRichlandLoadPredictor(LocalAsset, object):
                 # The interval value already exist. Simply reassign its value.
                 interval_value.value = LOAD
         self.scheduleCalculated = True
+        # 200929DJH: Remove scheduled powers that lie in expired markets.
+        self.scheduledPowers = [x for x in self.scheduledPowers if x.market.marketState != MarketState.Expired]
 
     @classmethod
     def test_all(cls):

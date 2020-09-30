@@ -63,6 +63,7 @@ from datetime import timedelta
 from .measurement_type import MeasurementType
 from .measurement_unit import MeasurementUnit
 from .interval_value import IntervalValue
+from .market_state import MarketState
 
 
 class InformationServiceModel(object):
@@ -88,48 +89,54 @@ class InformationServiceModel(object):
         self.predictedValues = []  # IntervalValue.empty
         self.updateInterval = timedelta(hours=1)  # [h]
 
-
     # This template is available to conduct the forecasting of useful information.
-    @classmethod
-    def update_information(ism, mkt):
-        #   Gather active time intervals ti
-        ti = mkt.timeIntervals
+    # 200928DJH: Changing back to a conventional object method. I think Hung must have made this a class method to defer
+    # fixing it.
+    # @classmethod
+    def update_information(self, market):
+        time_intervals = market.timeIntervals
 
-        #   index through active time intervals ti
-        for i in range(len(ti)):  # for i = 1:length(ti)
-            #       Get the start time for the indexed time interval
-            st = ti(i).startTime
+        for i in range(len(time_intervals)):
+            time_interval = time_intervals[i]
+
+            start_time = time_interval.startTime
 
             #       Extract the starting time hour
-            hr = st.hour
+            hr = start_time.hour
 
-            #       Look up the value in a table. NOTE: tables may be used during
-            #       development until active information services are developed.
-            # Is the purpose of this one to read MODERATE weather temperature? YES
-            T = readtable(ism.file)
-            value = T(hr + 1, 1)
+            # Look up the value in a table. NOTE: tables may be used during development until active information
+            # services are developed.
+            # TODO: 200928DJH: I don't know how/if this ever was made to work. Fix the reading of a csv table.
+            #                  The intention was to use a csv type of file to read scripted temperatures, in this case
+            #                  by hour. Could be extended to day type, hour, minute, etc.
+            # T = readtable(self.file)
+            #             # value = T(hr + 1, 1)
+            value = 56  # A Temporary workaround until a table can be read.
 
             #       Check whether the information exists in the indexed time interval
             # Question: what is ism? InformationServiceModel doesn't have 'values' as well as 'iv' properties.
             #   Suggestion: use long name as much as possible
             #   Need an example on what this one does. Really need a unit test here?
-            #iv = findobj(ism.values, 'timeInterval', ti(i))
-            iv = [x for x in ism.values if x.timeInterval.startTime == ti[i].startTime]  #
-            iv = iv[0] if len(iv)>0 else None
+            # 200928DJH: In Version 3, the following match should be made to actual time interval object, not its start
+            #            time.
+            iv = [x for x in self.predictedValues if x.timeInterval == time_interval]
+            iv = iv[0] if len(iv) > 0 else None
 
             if iv is None:  # isempty(iv):
                 # The value does not exist in the indexed time interval. Create it and store it.
-                #iv = IntervalValue(ism, ti(i), mkt, 'Temperature', value)
-                iv = IntervalValue(ism, ti[i], mkt, MeasurementType.Temperature, value)
-                ism.values = [ism.values, iv]
+                iv = IntervalValue(calling_object=self,
+                                   time_interval=time_interval,
+                                   market=market,
+                                   measurement_type=MeasurementType.Temperature,
+                                   value=value)
+                self.predictedValues.append(iv)
 
             else:
                 # The value exists in the indexed time interval. Simply reassign it
                 iv.value = value
 
-    # Not sure when to use this yet
-    #events
-    #    UpdatedInformationReceived
+        # 200929DJH: Trim the list of predicted values. Remove any values in expired markets.
+        self.predictedValues = [x for x in self.predictedValues if x.market.marketState != MarketState.Expired]
 
 
 if __name__ == '__main__':

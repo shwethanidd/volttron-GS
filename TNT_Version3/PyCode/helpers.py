@@ -313,7 +313,7 @@ def prod_cost_from_formula(obj, ti):
     return cost
 
 
-def production(obj, price, ti):
+def production(obj, price, ti, market=None):
     # Find economic power production for a marginal price and time interval
     # using an object model's demand or supply curve. This is performed as a
     # linear interpolation of a discrete set of price-ordered vertices (see
@@ -327,6 +327,12 @@ def production(obj, price, ti):
     # [p1] - economic power production in the given time interval   and at
     # the given price (positive for generation) [avg.kW].
 
+    av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in obj.activeVertices]
+    # if market is not None:
+    #     _log.debug("Market: {} production active vertices are: {}".format(market.name,
+    #                                                            av))
+    # else:
+    #     _log.debug("production active vertices are: {}".format(av))
     # Find the active production vertices for this time interval (see class IntervalValue).
     pv = find_objs_by_ti(obj.activeVertices, ti)
 
@@ -337,7 +343,13 @@ def production(obj, price, ti):
     pvv_len = len(pvv)
     if pvv_len == 0:  # No active vertices were found in the given time interval
         # _log.debug('Active vertices: %s' % (str(obj.activeVertices)))
-        raise Exception(' '.join(['No active vertices were found for', obj.name, 'in time interval', ti.name]))
+        if market is None:
+            raise Exception('No active vertices were found for {} in time interval {}, AV: {}'.format(obj.name, ti.name, av))
+        else:
+            raise Exception('No active vertices were found for {} in time interval {} for market: {}, AV: {}'.format(obj.name,
+                                                                                                         ti.name,
+                                                                                                         market.name,
+                                                                                                         av))
 
     # Ensure that the production vertices are ordered by increasing price.
     # Vertices having same price are ordered by power.

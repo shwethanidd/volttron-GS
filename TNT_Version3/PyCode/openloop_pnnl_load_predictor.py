@@ -58,9 +58,10 @@
 
 
 from datetime import datetime, timedelta, date, time
+from volttron.platform.agent import utils
 
 import logging
-#utils.setup_logging()
+utils.setup_logging()
 _log = logging.getLogger(__name__)
 
 from .helpers import *
@@ -70,7 +71,7 @@ from .market import Market
 from .time_interval import TimeInterval
 from .local_asset_model import LocalAsset
 from .temperature_forecast_model import TemperatureForecastModel
-
+from .market_state import MarketState
 
 class OpenLoopPnnlLoadPredictor(LocalAsset, object):
     """
@@ -287,20 +288,24 @@ class OpenLoopPnnlLoadPredictor(LocalAsset, object):
 
         # Get the active time intervals.
         time_intervals = mkt.timeIntervals  # TimeInterval objects
-
+        _log.debug("openloop_pnnl_load_predictor: Market: {} time_intervals len: {}".format(mkt.name,
+                                                                                            len(mkt.timeIntervals)))
         TEMP = None
         # Index through the active time intervals.
-        for time_interval in time_intervals:
+        # 200928DJH: Go back to basic indexing.
+        # for time_interval in time_intervals:
+        for i in range(len(time_intervals)):
+            time_interval = time_intervals[i]
+
             # Extract the start time from the indexed time interval.
             interval_start_time = time_interval.startTime
 
-            if self.temperature_forecaster is None:  # if isempty(temperature_forecaster)
-                # No appropriate information service was found, must use a
-                # default temperature value.
+            if self.temperature_forecaster is None:
+                # No appropriate information service was found, must use a default temperature value.
                 TEMP = 56.6  # [deg.F]
             else:
-                # An appropriate information service was found. Get the
-                # temperature that corresponds to the indexed time interval.
+                # An appropriate information service was found. Get the temperature that corresponds to the indexed time
+                # interval.
                 interval_value = find_obj_by_ti(self.temperature_forecaster.predictedValues, time_interval)
 
                 if interval_value is None:
@@ -368,14 +373,26 @@ class OpenLoopPnnlLoadPredictor(LocalAsset, object):
             interval_value = find_obj_by_ti(self.scheduledPowers, time_interval)
 
             if interval_value is None:
-                # No scheduled power was found in the indexed time interval.
-                # Create one and store it.
-                interval_value = IntervalValue(self, time_interval, mkt, MeasurementType.ScheduledPower, LOAD)
+                # No scheduled power was found in the indexed time interval. Create one and store it.
+                interval_value = IntervalValue(calling_object=self,
+                                               time_interval=time_interval,
+                                               market=mkt,
+                                               measurement_type=MeasurementType.ScheduledPower,
+                                               value=LOAD
+                                               )
                 self.scheduledPowers.append(interval_value)
+
             else:
                 # The interval value already exist. Simply reassign its value.
                 interval_value.value = LOAD
         self.scheduleCalculated = True
+        _log.debug("Market: {} schedule_power {}".format(mkt.name, self.scheduledPowers))
+        for power in self.scheduledPowers:
+            _log.debug("schedule_power Market {}, time interval: {}, power value: {} ".format(power.market.name,
+                                                                                   power.timeInterval.startTime,
+                                                                                           power.value))
+        # 200929DJH: Trim the list of scheduled powers for any that lie in expired markets.
+        self.scheduledPowers = [x for x in self.scheduledPowers if x.market.marketState != MarketState.Expired]
 
     @classmethod
     def test_all(cls):
@@ -385,7 +402,7 @@ class OpenLoopPnnlLoadPredictor(LocalAsset, object):
     
     @classmethod
     def predict_2017(cls):
-        from market import Market
+        from .market import Market
         import helpers
         from dateutil import parser
 

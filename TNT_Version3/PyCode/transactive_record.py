@@ -115,7 +115,7 @@ class TransactiveRecord(object):
             "marginalPrice": self.marginalPrice,
             "record": self.record,
             "power": self.power,
-            "timeStamp": self.timeStamp,
+            #"timeStamp": self.timeStamp,
             "cost": self.cost
         }
 

@@ -70,6 +70,9 @@ class DayAheadAuction(Auction):
 
     def spawn_markets(self, this_transactive_node, new_market_clearing_time):
 
+        # 200910DJH: This is where you may change between 15-minute and 60-minute real-time refinement intervals.
+        real_time_market_duration = timedelta(minutes=60)#60
+
         # First, go ahead and use the base method and current market to create the next member of this market series,
         # as was intended. This should instantiate the new market,  create its time intervals, and initialize marginal
         # prices for the new market.
@@ -82,6 +85,7 @@ class DayAheadAuction(Auction):
                       x.marketSeriesName == self.marketSeriesName][0]
 
         # Something is seriously wrong if the recently instantiated market cannot be found. Raise an error and stop.
+        # if market is None or len(market) == 0:
         if market is None:
             raise ('No predecessor of ' + self.name + ' could be found.')
 
@@ -100,21 +104,24 @@ class DayAheadAuction(Auction):
                 new_market = RealTimeAuction()
 
                 new_market.marketToBeRefined = market
-                new_market.intervalToBeRefined = [x.timeIntervals for x in market
-                                                  if x.timeIntervals.startTime == market_interval_start_times[i]]
+                new_market.intervalToBeRefined = [x for x in market.timeIntervals
+                                                  if x.startTime == market_interval_start_times[i]]
 
                 # Set the lead times. This is done explicitly.
-                new_market.marketClearingInterval = timedelta(minutes=15)
-                new_market.marketSeriesName = "Real-Time_Auction"
-                new_market.deliveryLeadTime = timedelta(minutes=15)
-                new_market.marketLeadTime = timedelta(minutes=15)
-                new_market.negotiationLeadTime = timedelta(minutes=15)
+                # 200910DJH: Please use real_time_market_duration to change between real-time market interval durations.
+                #  new_market.marketClearingInterval = timedelta(minutes=15)
+                new_market.marketClearingInterval = real_time_market_duration
+
+                new_market.marketSeriesName = "Real-Time Auction"
+                new_market.deliveryLeadTime = timedelta(minutes=5)
+                new_market.marketLeadTime = timedelta(minutes=5)
+                new_market.negotiationLeadTime = timedelta(minutes=5)
 
                 # Find the prior market in this series. It should be the one that shares the same market series name and
                 # is, until now, the newest market in the series.
                 prior_market = [x for x in this_transactive_node.markets
                                 if x.marketSeriesName == new_market.marketSeriesName
-                                and x.isNewestMarket is True][0]
+                                and x.isNewestMarket is True]
 
                 if prior_market is None or len(prior_market) == 0:
 
@@ -122,11 +129,12 @@ class DayAheadAuction(Auction):
                     Warning('No prior markets were found in market series: ' + new_market.marketSeriesName)
                     new_market.priceModel = self.priceModel
                     new_market.defaultPrice = self.defaultPrice
-                    new_market.futureHorizon = self.futureHorizon
+                    new_market.futureHorizon = new_market.marketClearingInterval
 
                 else:
 
                     # The prior market was found. These attributes may be adopted from the prior market in the series.
+                    prior_market = prior_market[0]
                     prior_market.isNewestMarket = False
                     new_market.priceModel = prior_market.priceModel
                     new_market.defaultPrice = prior_market.defaultPrice
@@ -135,7 +143,11 @@ class DayAheadAuction(Auction):
 
                 new_market.commitment = False
                 new_market.initialMarketState = MarketState.Inactive
-                new_market.intervalDuration = timedelta(minutes=15)
+
+                # 200910DJH: Please use the real-time_market_duration constant to modify real-time market intervals.
+                # new_market.intervalDuration = timedelta(minutes=15)
+                new_market.intervalDuration = real_time_market_duration
+
                 new_market.intervalsToClear = 1
                 new_market.marketOrder = 2
                 new_market.method = 2

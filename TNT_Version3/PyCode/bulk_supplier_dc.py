@@ -67,6 +67,7 @@ from .neighbor_model import Neighbor
 from .const import *
 from .vertex import Vertex
 from .timer import Timer
+from .market_state import MarketState
 
 utils.setup_logging()
 _log = logging.getLogger(__name__)
@@ -129,7 +130,7 @@ class BulkSupplier_dc(Neighbor):
 
         # Index through active time intervals.
         for i in range(len(time_intervals)):
-            vertices.clear()
+
             # Pick out the indexed time interval.
             time_interval = time_intervals[i]
 
@@ -171,13 +172,16 @@ class BulkSupplier_dc(Neighbor):
             # Demand Charges only apply to HLH hours.
             if is_heavyloadhour(time_interval.startTime) and self.demandRate != 0:
                 scheduled_power = [x.value for x in self.scheduledPowers if x.timeInterval == time_interval]
-#                scheduled_power = [x.power for x in self.scheduledPowers if x.timeInterval == time_interval]
                 if scheduled_power is not None and len(scheduled_power) != 0:
                     active_threshold = max(active_threshold, scheduled_power[0])
                 vertices = self.include_demand_charges(vertices=vertices, threshold=active_threshold)
 
             # Find and delete active vertices in the indexed time interval. These vertices shall be re-created.
-            self.activeVertices = [x for x in self.activeVertices if x != time_intervals[i]]
+            # 200925DJH: This already had an error in attempting equivalence between a time interval and interval value.
+            #            Otherwise, it should be fine for Version 3 because a time interval object is unique to its
+            #            market.
+            # self.activeVertices = [x for x in self.activeVertices if x != time_intervals[i]]
+            self.activeVertices = [x for x in self.activeVertices if x.timeInterval != time_interval]
 
             # Save the corrected vertices as active vertices interval values.
             for v in range(len(vertices)):
@@ -193,6 +197,9 @@ class BulkSupplier_dc(Neighbor):
                                                          value=vertex
                                                          )
                                            )
+
+        # 200929DJH: Trim any active vertices that lie in expired markets.
+        self.activeVertices = [x for x in self.activeVertices if x.market.marketState != MarketState.Expired]
 
     def old_update_vertices(self, mkt):
         # 200804DJH: Replaced. Newer version should be consistent with Version 3 treatment of demand charges and losses.

@@ -72,6 +72,7 @@ from .timer import Timer
 from .direction import Direction
 from copy import copy, deepcopy
 from operator import attrgetter
+from .market_state import MarketState
 
 from volttron.platform.agent import utils
 from volttron.platform.messaging import topics, headers as headers_mod
@@ -172,8 +173,11 @@ class Neighbor(object):
 
         # Gather active time intervals ti
         time_intervals = market.timeIntervals
-        time_interval_values = [t.startTime for t in time_intervals]
-        self.reserveMargins = [x for x in self.reserveMargins if x.timeInterval.startTime in time_interval_values]
+
+        # 200929DJH: This approach is too crude for Version 3. Commenting it out. Instead, reserve margins in expired
+        #            markets will be trimmed near the bottom of this method.
+        # time_interval_values = [t.startTime for t in time_intervals]
+        # self.reserveMargins = [x for x in self.reserveMargins if x.timeInterval.startTime in time_interval_values]
 
         # Index through active time intervals ti
         for i in range(len(time_intervals)):
@@ -221,6 +225,9 @@ class Neighbor(object):
             else:
                 # The reserve margin interval value already exists, simply reassign its value.
                 interval_value.value = value  # [avg.kW]
+
+        # 200929DJH: Trim any reserve margins that lie in expired markets.
+        self.reserveMargins = [x for x in self.reserveMargins if x.market.marketState != MarketState.Expired]
 
     def find_last_message_ts(self, signals, ti_name, fallback_value):
 
@@ -429,8 +436,11 @@ class Neighbor(object):
 
         # Gather the active time intervals.
         time_intervals = market.timeIntervals  # TimeInterval
-        time_interval_values = [t.startTime for t in time_intervals]
-        self.scheduledPowers = [x for x in self.scheduledPowers if x.timeInterval.startTime in time_interval_values]
+
+        # 200929DJH: Commenting out these lines that are too crude for Version 3. Instead, scheduled powers in expired
+        #            markets will be trimmed near the bottom of this method.
+        # time_interval_values = [t.startTime for t in time_intervals]
+        # self.scheduledPowers = [x for x in self.scheduledPowers if x.timeInterval.startTime in time_interval_values]
 
         # Index through active time intervals ti
         # NOTE 1911DJH: In Version 2, the range of this following for-loop started at 1 (i.e., at the second value). I
@@ -466,6 +476,9 @@ class Neighbor(object):
 
                 # A scheduled power already exists in the indexed time interval. Simply reassign its value.
                 interval_value.value = value  # [avg. kW]
+
+        # 200929DJH: Trim values in expired markets so the list does not grow indefinitely.
+        self.scheduledPowers = [x for x in self.scheduledPowers if x.market.marketState != MarketState.Expired]
 
         sp = [(x.timeInterval.name, x.value) for x in self.scheduledPowers]
         _log.debug("{} neighbor model scheduledPowers are: {}".format(self.name, sp))
@@ -520,8 +533,12 @@ class Neighbor(object):
                 return
             prior_market_powers = [x.value for x in self.scheduledPowers
                                    if x.market == prior_market]
-            prior_peak = max(prior_market_powers)
-            self.demandThreshold = max([0, self.demandThreshold, prior_peak])
+            if prior_market_powers is not None and len(prior_market_powers) != 0:
+                prior_peak = max(prior_market_powers)
+                self.demandThreshold = max([0, self.demandThreshold, prior_peak])
+            else:
+                self.demandThreshold = float("inf")
+
             # _log.debug("measurement: {} threshold: {}".format(d, self.demandThreshold))
         else:
             # An appropriate MeterPoint was found. The demand threshold may be updated from the MeterPoint.
@@ -537,7 +554,7 @@ class Neighbor(object):
 
         if mon != self.demandMonth:
             # This must be the start of a new month. The demand threshold must be reset. For now, "resetting" means
-            # using a fraction (e.g., 80#) of the final demand threshold in the prior month.
+            # using a fraction (e.g., 80%) of the final demand threshold in the prior month.
             self.demandThreshold = self.demandThresholdCoef * self.demandThreshold
             self.demandMonth = mon
 
@@ -545,8 +562,11 @@ class Neighbor(object):
 
         # Gather the active time intervals.
         time_intervals = market.timeIntervals
-        time_interval_values = [t.startTime for t in time_intervals]
-        self.dualCosts = [x for x in self.dualCosts if x.timeInterval.startTime in time_interval_values]
+
+        # 200929DJH: Commenting out this approach that is too crude for Version 3. Instead, dual costs in expired
+        #            markets will be removed near the bottom of this method.
+        # time_interval_values = [t.startTime for t in time_intervals]
+        # self.dualCosts = [x for x in self.dualCosts if x.timeInterval.startTime in time_interval_values]
 
         # 101213DJH: This next loop had been corrupted in Version 1 by starting with the second value (i.e., 1). This
         # should no longer be needed in Version 2 and the market state machine. This was found by the failure of the
@@ -591,18 +611,25 @@ class Neighbor(object):
 
         # Ensure that only active time intervals are in the list of dual costs.
         # NOTE: This was found to have been commented out for some reason. ????????????????????????????????????????
-        self.dualCosts = [x for x in self.dualCosts if x.timeInterval in time_intervals]
+        # 200929DJH: Fixed to work in Version 3. Values in expired markets are trimmed.
+        # self.dualCosts = [x for x in self.dualCosts if x.timeInterval in time_intervals]
+        self.dualCosts = [x for x in self.dualCosts if x.market.marketState != MarketState.Expired]
 
         # Sum the total dual cost and save the value
-        self.totalDualCost = sum([x.value for x in self.dualCosts])  # total dual cost [$]
+        # 200929DJH: This sum should be for only values in the current market.
+        # self.totalDualCost = sum([x.value for x in self.dualCosts])  # total dual cost [$]
+        self.totalDualCost = sum([x.value for x in self.dualCosts if x.market.marketState != MarketState.Expired])
 
         dc = [(x.timeInterval.name, x.value) for x in self.dualCosts]
         _log.debug("{} neighbor model dual costs are: {}".format(self.name, dc))
 
     def update_production_costs(self, market):
         time_intervals = market.timeIntervals
-        time_interval_values = [t.startTime for t in time_intervals]
-        self.productionCosts = [x for x in self.productionCosts if x.timeInterval.startTime in time_interval_values]
+
+        # 200929DJH: Commenting out this approach that is too crude for Version 3. Instead, values in expired markets
+        #            will be trimmed near the bottom of this method.
+        # time_interval_values = [t.startTime for t in time_intervals]
+        # self.productionCosts = [x for x in self.productionCosts if x.timeInterval.startTime in time_interval_values]
 
         # This range had been corrupted in Version 1 making it start with the second value. Doing so should no longer be
         # necessary in Version 2 with it market state machine. This issue was found from a failed test.
@@ -636,10 +663,14 @@ class Neighbor(object):
 
         # Ensure that only active time intervals are in the list of active production costs.
         # NOTE: This was found to have been commented out. ??????????????????????????????????????????????
-        self.productionCosts = [x for x in self.productionCosts if x.timeInterval in time_intervals]
+        # 200929DJH: Corrected to work in Version 3.
+        # self.productionCosts = [x for x in self.productionCosts if x.timeInterval in time_intervals]
+        self.productionCosts = [x for x in self.productionCosts if x.market.marketState != MarketState.Expired]
 
         # Sum the total production cost.
-        self.totalProductionCost = sum([x.value for x in self.productionCosts])  # total production cost [$]
+        # 200929DJH: Corrected for Version 3. Sum must be taken only for values in current market.
+        # self.totalProductionCost = sum([x.value for x in self.productionCosts])  # total production cost [$]
+        self.totalProductionCost = sum([x.value for x in self.productionCosts if x.market == market])
 
         pc = [(x.timeInterval.name, x.value) for x in self.productionCosts]
         _log.debug("{} neighbor model production costs are: {}".format(self.name, pc))
@@ -698,6 +729,8 @@ class Neighbor(object):
             # Clean up the neighbor's active vertices. Remove any vertices that happen to exist already in this time
             # interval. These will be re-created. (This makes for simpler code logic that first determining if the
             # vertex exists and alternatively replacing its value or creating a new vertex.)
+            # 200925DJH: Checked this logic for Version 3. It should be fine because the time interval is unique both to
+            #            the starting time and a market.
             self.activeVertices = [x for x in self.activeVertices if x.timeInterval != time_interval]
 
             if not self.transactive:
@@ -843,7 +876,6 @@ class Neighbor(object):
                                            if x.timeInterval.name == time_interval]
                 if current_scheduled_power is not None and len(current_scheduled_power) != 0:
                     active_threshold = max(active_threshold, current_scheduled_power[0])
-                _log.debug("calling include_demand_charges: ")
                 active_vertices = self.include_demand_charges(vertices=active_vertices, threshold=active_threshold)
 
             # Return the corrected vertices back to the neighbor's list of active vertices.
@@ -859,6 +891,9 @@ class Neighbor(object):
                                                          measurement_type=MeasurementType.ActiveVertex,
                                                          value=active_vertex)
                                            )
+
+        # 200929DJH: Trim any active vertices that lie in expired markets so that the list will not grow indefinitely.
+        self.activeVertices = [x for x in self.activeVertices if x.market.marketState != MarketState.Expired]
 
     def old_update_vertices(self, market):
         # Update the active vertices that define Neighbors' residual flexibility in the form of supply or demand curves.
@@ -1344,7 +1379,7 @@ class Neighbor(object):
                                      )
             _log.debug("prep_transactive_signal 4a end")
 
-    def send_transactive_signal(self, this_transactive_node, topic, start_of_cycle=False, fail_to_converged=False):
+    def send_transactive_signal(self, market, this_transactive_node, topic, start_of_cycle=False, fail_to_converged=False):
         # Send transactive records to a transactive neighbor.
         #
         # Retrieves the current transactive records, formats them into a table, and "sends" them to a text file for the
@@ -1388,7 +1423,8 @@ class Neighbor(object):
                                                  message={'source': self.location,
                                                           'curves': msg,
                                                           'start_of_cycle': start_of_cycle,
-                                                          'fail_to_converged': fail_to_converged})
+                                                          'fail_to_converged': fail_to_converged,
+                                                          'tnt_market_name': market.name})
 
         topic = this_transactive_node.transactive_record_topic
         _log.debug("send_transactive signal: {}, msg: {}".format(topic, msg))
@@ -1458,8 +1494,11 @@ class Neighbor(object):
         self.update_dual_costs(market)
 
         # Sum total production and dual costs through all time intervals.
-        self.totalProductionCost = sum([x.value for x in self.productionCosts])
-        self.totalDualCost = sum([x.value for x in self.dualCosts])
+        # 200929DJH: These sums must occur in the same market.
+        # self.totalProductionCost = sum([x.value for x in self.productionCosts])
+        #         # self.totalDualCost = sum([x.value for x in self.dualCosts])
+        self.totalProductionCost = sum([x.value for x in self.productionCosts if x.market == market])
+        self.totalDualCost = sum([x.value for x in self.dualCosts if x.market == market])
 
     def include_marginal_losses(self, vertices):
         # This method corrects supply from neighbors based on transport inefficiency and the impact of transport losses

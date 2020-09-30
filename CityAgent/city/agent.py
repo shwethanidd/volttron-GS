@@ -103,7 +103,8 @@ class CityAgent(Agent, TransactiveNode):
 
         self.neighbors = []
 
-        self.db_topic = self.config.get("db_topic", "tnc")
+        #self.db_topic = self.config.get("db_topic", "tnc")
+        self.db_topic = self.config.get("db_topic", "record")
         self.campus_demand_topic = "{}/campus/city/demand".format(self.db_topic)
         self.city_supply_topic = "{}/city/campus/supply".format(self.db_topic)
         self.system_loss_topic = "{}/{}/system_loss".format(self.db_topic, self.name)
@@ -123,8 +124,9 @@ class CityAgent(Agent, TransactiveNode):
         self.campus = None
         # New TNT db topics
         self.local_asset_topic = "{}/{}/local_assets".format(self.db_topic, self.name)
-        self.neighbor_topic = "{}/{}/neighbors/".format(self.db_topic, self.name)
+        self.neighbor_topic = "{}/{}/neighbors".format(self.db_topic, self.name)
         self.transactive_record_topic = "{}/{}/transactive_record".format(self.db_topic, self.name)
+        self.market_topic = "{}/{}/market".format(self.db_topic, self.name)
 
     def get_exp_start_time(self):
         one_second = timedelta(seconds=1)
@@ -219,8 +221,8 @@ class CityAgent(Agent, TransactiveNode):
         # 191219DJH: This logic should be deferred to the new market state machine, please.
         # self.balance_market(1)
         # self.markets[0].events(self)
-        for idx, p in enumerate(self.markets[0].marginalPrices):
-            _log.debug("new_demand_signal: At {} Market marginal prices are: {}".format(self.name, p.value))
+        # for idx, p in enumerate(self.markets[0].marginalPrices):
+        #     _log.debug("new_demand_signal: At {} Market marginal prices are: {}".format(self.name, p.value))
 
     '''
     # 191218DJH: The logic in this section should be deferred to the new market state machine. See method self.go().
@@ -295,6 +297,7 @@ class CityAgent(Agent, TransactiveNode):
         # This topic will be used to send transactive signal to neighbor
         _log.debug("SN: CITY SUPPLY TOPIC: {}".format(self.city_supply_topic))
         campus.publishTopic = self.city_supply_topic
+        _log.debug("SN: CITY campus neighbor getDict: {}".format(campus.getDict()))
         self.neighbors.append(campus)
         return campus
 
@@ -356,6 +359,7 @@ class CityAgent(Agent, TransactiveNode):
         bpaElectricityMeter.measurementUnit = MeasurementUnit.kWh
         supplier.meterPoints = [bpaElectricityMeter]
 
+        _log.debug("SN: CITY supplier neighbor getDict: {}".format(supplier.getDict()))
         # Add supplier as city's neighbor
         self.neighbors.append(supplier)
 
@@ -365,12 +369,22 @@ class CityAgent(Agent, TransactiveNode):
         # 191218DJH: This is the entire timing logic. It relies on current market object's state machine method events()
         import time
         while not self._stop_agent:  # a condition may be added to provide stops or pauses.
+            markets_to_remove = []
             for i in range(len(self.markets)):
                 self.markets[i].events(self)
+                _log.debug("Markets: {}, Market name: {}, Market state: {}".format(len(self.markets),
+                                                                                   self.markets[i].name,
+                                                                                   self.markets[i].marketState))
+
+                if self.markets[i].marketState == MarketState.Expired:
+                    markets_to_remove.append(self.markets[i])
                 # NOTE: A delay may be added, but the logic of the market(s) alone should be adequate to drive system
                 # activities
-                _log.debug("Markets: {}, Market state: {}".format(len(self.markets), self.markets[i].marketState))
-                gevent.sleep(10)
+                gevent.sleep(0.02)
+            for mkt in markets_to_remove:
+                _log.debug("Market name: {}, Market state: {}. It will be removed shortly".format(mkt.name,
+                                                                                                  mkt.marketState))
+                self.markets.remove(mkt)
 
     def make_day_ahead_market(self):
         # 191219DJH: It will be important that different agents' markets are similarly, if not identically,
@@ -387,7 +401,8 @@ class CityAgent(Agent, TransactiveNode):
         market.intervalsToClear = 24                    # 24 hours are cleared altogether
         market.futureHorizon = timedelta(hours=24)      # Projects 24 hourly future intervals
         market.intervalDuration = timedelta(hours=1)    # [h] Intervals are 1 h long
-        market.marketClearingInterval = timedelta(days=1)  # The market clears daily
+        market.marketClearingInterval = timedelta(days=1)
+        #market.marketClearingInterval = timedelta(days=1)  # The market clears daily
         market.marketSeriesName = "Day-Ahead_Auction"   # Prepends future market object names
         market.method = 2                               # Use simpler interpolation solver
 
@@ -399,14 +414,15 @@ class CityAgent(Agent, TransactiveNode):
 
         # Determine the current and next market clearing times in this market:
         current_time = Timer.get_cur_time()
-
+        current_time = current_time - timedelta(hours=24)
+        _log.debug("CITY agent current_time: {}".format(current_time))
         # Presume first delivery hour starts at 10:00 each day:
         #delivery_start_time = current_time.replace(hour=10, minute=0, second=0, microsecond=0)
         delivery_start_time = current_time.replace(hour=2, minute=0, second=0, microsecond=0)
 
         # The market clearing time must occur a delivery lead time prior to delivery:
         market.marketClearingTime = delivery_start_time - market.deliveryLeadTime
-
+        _log.debug("market.marketClearingTime: {}".format(market.marketClearingTime))
         # If it's too late today to begin the market processes, according to all the defined lead times, skip to the
         # next market object:
         if current_time > market.marketClearingTime - market.marketLeadTime \
@@ -415,6 +431,7 @@ class CityAgent(Agent, TransactiveNode):
 
         # Schedule the next market clearing for another market cycle later:
         market.nextMarketClearingTime = market.marketClearingTime + market.marketClearingInterval
+        _log.debug("CITY: Market nextMarketClearingTime: {}".format(market.nextMarketClearingTime))
 
         dt = str(market.marketClearingTime)
         market.name = market.marketSeriesName.replace(' ', '_') + '_' + dt[:19]
@@ -428,6 +445,9 @@ class CityAgent(Agent, TransactiveNode):
 
         self.markets.append(market)
 
+        for p in market.marginalPrices:
+            _log.debug("Market name: {} Initial marginal prices: {}".format(market.name, p.value))
+        market.marketState = MarketState.Delivery
         return market
 
         # IMPORTANT: The real-time correction markets are instantiated by the day-ahead markets as they become

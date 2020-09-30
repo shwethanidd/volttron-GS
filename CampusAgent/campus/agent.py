@@ -102,7 +102,9 @@ class CampusAgent(Agent, TransactiveNode):
         self.duality_gap_threshold = float(self.config.get('duality_gap_threshold', 0.01))
         self.building_names = self.config.get('buildings', [])
         self.building_powers = self.config.get('building_powers')
-        self.db_topic = self.config.get("db_topic", "tnc")
+        #self.db_topic = self.config.get("db_topic", "tnc")
+
+        self.db_topic = self.config.get("db_topic", "record")
         self.PV_max_kW = float(self.config.get("PV_max_kW"))
         self.city_loss_factor = float(self.config.get("city_loss_factor"))
 
@@ -123,6 +125,7 @@ class CampusAgent(Agent, TransactiveNode):
         self.local_asset_topic = "{}/{}/local_assets".format(self.db_topic, self.name)
         self.neighbor_topic = "{}/{}/neighbors".format(self.db_topic, self.name)
         self.transactive_record_topic = "{}/{}/transactive_record".format(self.db_topic, self.name)
+        self.market_topic = "{}/{}/market".format(self.db_topic, self.name)
 
         self.reschedule_interval = timedelta(minutes=10, seconds=1)
 
@@ -180,8 +183,8 @@ class CampusAgent(Agent, TransactiveNode):
             _log.error("Message is: {}".format(message))
             _log.error("Check value of 'name' key in the config file for building {}.".format(building_name))
 
-        for idx, p in enumerate(self.markets[0].marginalPrices):
-            _log.debug("new_demand_signal: At {} Market marginal prices are: {}".format(self.name, p.value))
+        # for idx, p in enumerate(self.markets[0].marginalPrices):
+        #     _log.debug("new_demand_signal: At {} Market marginal prices are: {}".format(self.name, p.value))
 
     def new_supply_signal(self, peer, sender, bus, topic, headers, message):
         _log.debug("At {}, {} receives new supply records: {}".format(Timer.get_cur_time(),
@@ -394,10 +397,12 @@ class CampusAgent(Agent, TransactiveNode):
 
         # Determine the current and next market clearing times in this market:
         current_time = Timer.get_cur_time()
-
+        current_time = current_time - timedelta(hours=24)
+        _log.debug("CAMPUS agent current_time: {}".format(current_time))
         # Presume first delivery hour starts at 10:00 each day:
         #delivery_start_time = current_time.replace(hour=10, minute=0, second=0, microsecond=0)
         delivery_start_time = current_time.replace(hour=2, minute=0, second=0, microsecond=0)
+
 
         # The market clearing time must occur a delivery lead time prior to delivery:
         market.marketClearingTime = delivery_start_time - market.deliveryLeadTime
@@ -422,6 +427,9 @@ class CampusAgent(Agent, TransactiveNode):
 
         # Initialize the marginal prices in the Market object's time intervals.
         market.check_marginal_prices(self)
+        for p in market.marginalPrices:
+            _log.debug("Market name: {} Initial marginal prices: {}".format(market.name, p.value))
+        market.marketState = MarketState.Delivery
         return market
 
         # IMPORTANT: The real-time correction markets are instantiated by the day-ahead markets as they become
@@ -462,12 +470,21 @@ class CampusAgent(Agent, TransactiveNode):
         # 191218DJH: This is the entire timing logic. It relies on current market object's state machine method events()
 
         while not self._stop_agent:  # a condition may be added to provide stops or pauses.
+            markets_to_remove = []
             for i in range(len(self.markets)):
                 self.markets[i].events(self)
-                _log.debug("Markets: {}, Market state: {}".format(len(self.markets), self.markets[i].marketState))
+                _log.debug("Markets: {}, Market name: {}, Market state: {}".format(len(self.markets),
+                                                                  self.markets[i].name,
+                                                                  self.markets[i].marketState))
+                if self.markets[i].marketState == MarketState.Expired:
+                    markets_to_remove.append(self.markets[i])
                 # NOTE: A delay may be added, but the logic of the market(s) alone should be adequate to drive system
                 # activities
-                gevent.sleep(10)
+                gevent.sleep(0.02)
+            for mkt in markets_to_remove:
+                _log.debug("Market name: {}, Market state: {}. It will be removed shortly".format(mkt.name,
+                                                                                                  mkt.marketState))
+                self.markets.remove(mkt)
 
     @Core.receiver('onstop')
     def onstop(self, sender, **kwargs):

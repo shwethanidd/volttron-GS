@@ -61,6 +61,11 @@ from .helpers import *
 from .measurement_type import MeasurementType
 from .local_asset_model import LocalAsset
 from .interval_value import IntervalValue
+from volttron.platform.agent import utils
+from .market_state import MarketState
+
+utils.setup_logging()
+_log = logging.getLogger(__name__)
 
 
 class SolarPvResource(LocalAsset, object):
@@ -87,12 +92,14 @@ class SolarPvResource(LocalAsset, object):
 
         # Gather active time intervals
         time_intervals = market.timeIntervals
+        _log.debug("solar_pv_resource_model: Market: {} time_intervals len: {}".format(market.name,
+                                                                                            len(market.timeIntervals)))
 
         # Index through the active time intervals ti
-        for ti in time_intervals:
+        for i in range(len(time_intervals)):
 
             # Production will be estimated from the time-of-day at the center of the time interval.
-            time_of_day = ti.startTime + ti.duration/2  # a datetime
+            time_of_day = time_intervals[i].startTime + time_intervals[i].duration/2  # a datetime
 
             # extract a fractional representation of the hour-of-day
             h = time_of_day.hour
@@ -113,11 +120,11 @@ class SolarPvResource(LocalAsset, object):
                 power = self.cloudFactor * power                                        # [avg.kW]
 
             # Check whether a scheduled power exists in the indexed time interval.
-            interval_value = find_obj_by_ti(self.scheduledPowers, ti)
+            interval_value = find_obj_by_ti(self.scheduledPowers, time_intervals[i])
             if interval_value is None:
 
                 # No scheduled power value is found in the indexed time interval. Create and store one.
-                interval_value = IntervalValue(self, ti, market, MeasurementType.ScheduledPower, power)
+                interval_value = IntervalValue(self, time_intervals[i], market, MeasurementType.ScheduledPower, power)
 
                 # Append the scheduled power to the list of scheduled powers.
                 self.scheduledPowers.append(interval_value)
@@ -129,7 +136,7 @@ class SolarPvResource(LocalAsset, object):
             # Assign engagement schedule in the indexed time interval NOTE: The assignment of engagement schedule, if
             # used, will often be assigned during the scheduling of power, not separately as demonstrated here.
             # Check whether an engagement schedule exists in the indexed time interval
-            interval_value = find_obj_by_ti(self.engagementSchedule, ti)
+            interval_value = find_obj_by_ti(self.engagementSchedule, time_intervals[i])
 
             # NOTE: this template assigns engagement value as true (i.e., engaged).
             val = True  # Asset is committed or engaged
@@ -138,7 +145,7 @@ class SolarPvResource(LocalAsset, object):
 
                 # No engagement schedule was found in the indexed time interval. Create an interval value and assign its
                 # value.
-                interval_value = IntervalValue(self, ti, market, MeasurementType.EngagementSchedule, val)
+                interval_value = IntervalValue(self, time_intervals[i], market, MeasurementType.EngagementSchedule, val)
 
                 # Append the interval value to the list of active interval values
                 self.engagementSchedule.append(interval_value)
@@ -149,13 +156,28 @@ class SolarPvResource(LocalAsset, object):
                 interval_value.value = val  # [$]
 
         # Remove any extra scheduled powers
-        # TODO: This step may not be necessary for Python environment because of the way it does garbage cleanup.
-        self.scheduledPowers = [x for x in self.scheduledPowers if x.timeInterval in time_intervals]
+        # 200929DJH: In Version 3, this is problematic because valid scheduled powers can exist in other markets and
+        #            should not be deleted. This was causing valid scheduled powers to be eliminated. Let's try
+        #            eliminating the scheduled powers that are in expired markets.
+        # self.scheduledPowers = [x for x in self.scheduledPowers if x.timeInterval in time_intervals]
+        self.scheduledPowers = [x for x in self.scheduledPowers if x.market.marketState != MarketState.Expired]
 
         # TODO: This step may not be necessary for Python environment because of the way it does garbage cleanup.
         # Remove any extra engagement schedule values
         self.engagementSchedule = [x for x in self.engagementSchedule if x.timeInterval in time_intervals]
         self.scheduleCalculated = True
+        _log.debug("Market: {} schedule_power {}".format(market.name, self.scheduledPowers))
+        for power in self.scheduledPowers:
+            _log.debug("schedule_power Market {}, time interval: {}, power value: {} ".format(power.market.name,
+                                                                                              power.timeInterval.startTime,
+                                                                                              power.value))
+
+        # Remove any extra engagement schedule values
+        # 200929DJH: In Version 3, this is problematic because valid scheduled engagements can exist in other markets
+        #            and should not be deleted. Let's try eliminating the scheduled engagements that are in expired
+        #            markets.
+        # self.engagementSchedule = [x for x in self.engagementSchedule if x.timeInterval in time_intervals]
+        self.engagementSchedule = [x for x in self.engagementSchedule if x.market.marketState != MarketState.Expired]
 
 
 if __name__ == '__main__':

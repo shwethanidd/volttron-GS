@@ -77,3 +77,4 @@ class TransactiveNode(object):
         self.markets = []
         self.meterPoints = []
         self.neighbors = []
+
