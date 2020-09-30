@@ -66,7 +66,7 @@ from .helpers import *
 # from market import Market
 from .time_interval import TimeInterval
 from .timer import Timer
-
+from .market_state import MarketState
 
 utils.setup_logging()
 _log = logging.getLogger(__name__)
@@ -222,9 +222,16 @@ class LocalAsset(object):
         # Gather the active time intervals ti
         time_intervals = market.timeIntervals
 
-        time_interval_values = [t.startTime for t in time_intervals]
-        self.scheduledPowers = [x for x in self.scheduledPowers if x.timeInterval.startTime in time_interval_values]
+        # 200929DJH: This is a problem in Version 3 because it removes some perfectly valid scheduled powers in other
+        #            active market objects. Commenting these lines out. Below, scheduled powers will be trimmed if they
+        #            are in expired markets.
+        # time_interval_values = [t.startTime for t in time_intervals]
+        # self.scheduledPowers = [x for x in self.scheduledPowers if x.timeInterval.startTime in time_interval_values]
 
+        for power in self.scheduledPowers:
+            _log.debug("schedule_power Market {}, time interval: {}, power value: {} ".format(power.market.name,
+                                                                                              power.timeInterval.startTime,
+                                                                                              power.value))
         # Sort by function lambda, assumed to be a helper function pointing to start times
         time_intervals.sort(key=lambda x: x.startTime)
 
@@ -233,8 +240,9 @@ class LocalAsset(object):
 
         # Index through the active time intervals ti
         for i in range(len(time_intervals)):
+            time_interval = time_intervals[i]
             # Check whether a scheduled power already exists for the indexed time interval
-            iv = find_obj_by_ti(self.scheduledPowers, time_intervals[i])
+            iv = find_obj_by_ti(self.scheduledPowers, time_interval)
 
             # Reassign default value if there is power value for this time interval
             # No, no, and no. Do not assign default values apart from specific times. The real world does not always
@@ -245,7 +253,7 @@ class LocalAsset(object):
 
             if iv is None:  # A scheduled power does not exist for the indexed time interval
                 # Create an interval value and assign the default value
-                iv = IntervalValue(self, time_intervals[i], market, MeasurementType.ScheduledPower, default_value)
+                iv = IntervalValue(self, time_interval, market, MeasurementType.ScheduledPower, default_value)
 
                 # Append the new scheduled power to the list of scheduled
                 # powers for the active time intervals
@@ -255,6 +263,9 @@ class LocalAsset(object):
                 # The scheduled power already exists for the indexed time
                 # interval. Simply reassign its value
                 iv.value = default_value  # [avg.kW]
+
+        # 200929DJH: This next line prevents the list of scheduled powers from growing indefinitely.
+        self.scheduledPowers = [x for x in self.scheduledPowers if x.market.marketState != MarketState.Expired]
 
         # sp = [(x.timeInterval.name, x.value) for x in self.scheduledPowers]
         # _log.debug("{} asset model scheduledPowers are: {}".format(self.name, sp))
@@ -270,9 +281,13 @@ class LocalAsset(object):
 
         # Gather the active time intervals ti
         time_intervals = market.timeIntervals  # active TimeIntervals
-        time_interval_values = [t.startTime for t in time_intervals]
-        self.engagementSchedule = [x for x in self.engagementSchedule
-                                   if x.timeInterval.startTime in time_interval_values]
+
+        # 200929DJH: This approach is too crude for Version 3 because engagement schedules are not unique to starting
+        #            times. Instead, the values in expired markets will be trimmed near the bottom of this method.
+        #            Commenting out offending lines.
+        # time_interval_values = [t.startTime for t in time_intervals]
+        # self.engagementSchedule = [x for x in self.engagementSchedule
+        #                            if x.timeInterval.startTime in time_interval_values]
 
         # Index through the active time intervals.
         for i in range(len(time_intervals)):
@@ -297,7 +312,9 @@ class LocalAsset(object):
                 interval_value.value = engagement_flag  # [$]
 
         # Remove any extra engagement schedule values
+        # 200929DJH: Improved to work in Version 3.
         # self.engagementSchedule = [x for x in self.engagementSchedule if x.timeInterval in ti]
+        self.engagementSchedule = [x for x in self.engagementSchedule if x.market.marketState != MarketState.Expired]
 
     def calculate_reserve_margin(self, market):
         # Estimate available (spinning) reserve margin for this asset.
@@ -322,8 +339,11 @@ class LocalAsset(object):
 
         # Gather the active time intervals ti
         time_intervals = market.timeIntervals  # active TimeIntervals
-        time_interval_values = [t.startTime for t in time_intervals]
-        self.reserveMargins = [x for x in self.reserveMargins if x.timeInterval.startTime in time_interval_values]
+
+        # 200929DJH: This approach is too crude for Version 3 and is being commented out. Instead, the reserve margins
+        #            in expired markets will be removed near the bottom of this method.
+        # time_interval_values = [t.startTime for t in time_intervals]
+        # self.reserveMargins = [x for x in self.reserveMargins if x.timeInterval.startTime in time_interval_values]
 
         # Index through active time intervals ti
         for i in range(len(time_intervals)):
@@ -377,6 +397,9 @@ class LocalAsset(object):
                 # The reserve margin already exists for the indexed time interval. Simply reassign its value.
                 interval_value.value = reserve_margin  # [avg.kW]
 
+        # 200929DJH: Remove any reserve margins that lie in expired markets.
+        self.reserveMargins = [x for x in self.reserveMargins if x.market.marketState != MarketState.Expired]
+
     def engagement_cost(self, dif):
         # Assigns engagement cost based on difference in engagement status in the current minus prior time intervals.
         #
@@ -429,8 +452,11 @@ class LocalAsset(object):
 
         # Gather active time intervals
         time_intervals = market.timeIntervals
-        time_interval_values = [t.startTime for t in time_intervals]
-        self.transitionCosts = [x for x in self.transitionCosts if x.timeInterval.startTime in time_interval_values]
+
+        # 200929DJH: This method for trimming the transition costs is too crude for Version 3. Commenting out. Instead,
+        #            the transaction costs that lie in expired markets will be trimmed further down.
+        # time_interval_values = [t.startTime for t in time_intervals]
+        # self.transitionCosts = [x for x in self.transitionCosts if x.timeInterval.startTime in time_interval_values]
 
         # Ensure that ti is ordered by time interval start times
         time_intervals.sort(key=lambda x: x.startTime)
@@ -439,20 +465,21 @@ class LocalAsset(object):
         for i in range(len(time_intervals)):
 
             # Find the current engagement schedule ces in the current indexed time interval ti(i)
-            current_engagement_state = [x for x in self.engagementSchedule
-                                        if x.timeInterval.startTime == time_intervals[i].startTime]
-
-            # Extract its engagement state
-            current_engagement_state = current_engagement_state[0].value  # logical (true/false)
+            # 200929DJH: In Version 3, the engagement state must be matched to a time interval object, not its start
+            #            time, which is not necessarily unique.
+            # current_engagement_state = [x for x in self.engagementSchedule
+            #                             if x.timeInterval.startTime == time_intervals[i].startTime]
+            current_engagement_state = [x.value for x in self.engagementSchedule if x.timeInterval == time_intervals[i]]
 
             # TODO: The calculation of transition cost is not right for the first time interval (being compared to last)
             # TODO: This calculation can probably be vectorized when time permits to speed it up.
             # Find the engagement state from in the prior indexed time interval (i-1).
-            prior_engagement_state = [x for x in self.engagementSchedule
-                                      if x.timeInterval.startTime == time_intervals[i - 1].startTime]
-
-            # And extract its value,
-            prior_engagement_state = prior_engagement_state[0].value  # logical (true/false)
+            # 200929DJH: As above, make selection based on time interval object, not its start time, which may not be
+            #            unique.
+            # prior_engagement_state = [x for x in self.engagementSchedule
+            #                           if x.timeInterval.startTime == time_intervals[i - 1].startTime]
+            prior_engagement_state = [x.value for x in self.engagementSchedule
+                                      if x.timeInterval == time_intervals[i - 1]]
 
             # Calculate the state transition
             # - -1:Disengaging
@@ -480,6 +507,9 @@ class LocalAsset(object):
 
                 # A transition cost was found in the indexed time interval. Simply reassign its value.
                 interval_value.value = transition_cost  # [$]
+
+        # 200929DJH: Trim any transition costs that lie in expired markets.
+        self.transitionCosts = [x for x in self.transitionCosts if x.market.marketState != MarketState.Expired]
 
         # Remove any extraneous transition cost values
         # self.transitionCosts = [x for x in self.transitionCosts if x.timeInterval in time_intervals]
@@ -536,9 +566,12 @@ class LocalAsset(object):
 
         # Ensure that only active time intervals are in the list of dual costs
         # self.dualCosts = [x for x in self.dualCosts if x.timeInterval in ti]
+        # 200929DJH: Trim dual costs that lie in expired markets.
+        self.dualCosts = [x for x in self.dualCosts if x.market.marketState != MarketState.Expired]
 
         # Sum the total dual cost and save the value.
-        self.totalDualCost = sum([x.value for x in self.dualCosts])
+        # 200929DJH: This is corrected to sum only the dual costs in the current market
+        self.totalDualCost = sum([x.value for x in self.dualCosts if x.market == market])
 
         dual_cost = [(x.timeInterval.name, x.value) for x in self.dualCosts]
         #        _log.debug("{} asset model dual costs are: {}".format(self.name, dc))
@@ -594,10 +627,15 @@ class LocalAsset(object):
                 interval_value.value = production_cost  # [$]
 
         # Ensure that only active time intervals are in the list of active production costs.
-        self.productionCosts = [x for x in self.productionCosts if x.timeInterval in time_intervals]
+        # 200929DJH: This must be corrected in Version 3 because there are perfectly valid production costs in other
+        #            markets. Instead, trim the production costs that lie in expired markets.
+        # self.productionCosts = [x for x in self.productionCosts if x.timeInterval in time_intervals]
+        self.productionCosts = [x for x in self.productionCosts if x.market.marketState != MarketState.Expired]
 
         # Sum the total production cost.
-        self.totalProductionCost = sum([x.value for x in self.productionCosts])  # total production cost [$]
+        # 200929DJH: In Version 3, this sum must be made only within the current market object.
+        # self.totalProductionCost = sum([x.value for x in self.productionCosts])  # total production cost [$]
+        self.totalProductionCost = sum([x.value for x in self.productionCosts if x.market == market])  # [$]
 
         production_cost = [(x.timeInterval.name, x.value) for x in self.productionCosts]
         # _log.debug("{} asset model production costs are: {}".format(self.name, pc))
@@ -611,10 +649,17 @@ class LocalAsset(object):
         # Gather active time intervals.
         time_intervals = market.timeIntervals  # active TimeIntervals
 
+        for power in self.scheduledPowers:
+            _log.debug("update_vertices Market {}, time interval: {}, power value: {} ".format(power.market.name,
+                                                                                              power.timeInterval.startTime,
+                                                                                              power.value))
+        _log.debug("update_vertices Market: {}, scheduled powers: {}".format(market.name,
+                                                                            self.scheduledPowers))
         # Index through active time intervals.
         for i in range(len(time_intervals)):
 
             # Find the scheduled power for the indexed time interval. Extract the scheduled power value.
+            # TODO: Make this next line tolerant upon finding scheduled_power = None.
             scheduled_power = find_obj_by_ti(self.scheduledPowers, time_intervals[i])
             scheduled_power = scheduled_power.value  # avg. kW]
 
@@ -640,8 +685,11 @@ class LocalAsset(object):
                 # is allowed because it teaches how a more dynamic assignment may be maintained.
                 interval_value.value = value
 
-        av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in self.activeVertices]
-        _log.debug("{} asset model active vertices are: {}".format(self.name, av))
+        # 200929DJH: Trim the list of active vertices so that it will not grow indefinitely.
+        self.activeVertices = [x for x in self.activeVertices if x.market.marketState != MarketState.Expired]
+
+        # av = [(x.timeInterval.name, x.value.marginalPrice, x.value.power) for x in self.activeVertices]
+        #        _log.debug("{} asset model active vertices are: {}".format(self.name, av))
 
     def get_extended_prices(self, market):  # 200120DJH This does not, after all, require a TransactiveNode parameter.
         """
