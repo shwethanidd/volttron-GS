@@ -117,6 +117,8 @@ class CriteriaContainer(object):
     def __init__(self):
         self.clusters = []
         self.devices = {}
+        self.all_device_topics = []
+        self.topics_per_device = {}
 
     def add_criteria_cluster(self, cluster):
         self.clusters.append(cluster)
@@ -151,6 +153,14 @@ class CriteriaContainer(object):
     def get_device(self, device_name):
         return self.devices[device_name]
 
+    def get_ingest_topic_dict(self):
+        topic_list = []
+        for device in self.devices.values():
+            topic_list.extend(device.get_ingest_topic_list())
+            self.topics_per_device[device] = topic_list
+            topic_list.clear()
+        return self.topics_per_device
+
     # this passes all data coming in to all device criteria
     # TODO:  rethink this approach.  Is there a better way to create the topic map to pass only data needed
     def ingest_data(self, time_stamp, data):
@@ -172,6 +182,7 @@ class DeviceCriteria(object):
                 criteria = Criteria(device_criteria, logging_topic, parent)
                 self.criteria[(device_id, state)] = criteria
 
+
     def ingest_data(self, time_stamp, data):
         for criteria in self.criteria.values():
             criteria.ingest_data(time_stamp, data)
@@ -181,6 +192,12 @@ class DeviceCriteria(object):
 
     def evaluate(self, token):
         return self.criteria[token].evaluate()
+
+    def get_criteria_topic_list(self):
+        topic_list = []
+        for criteria in self.criteria.values():
+            topic_list.extend(criteria.get_criteria_topic_list())
+        return topic_list
 
 
 class Criteria(object):
@@ -213,6 +230,16 @@ class Criteria(object):
     def criteria_status(self, status):
         for criterion in self.criteria.values():
             criterion.criteria_status(status)
+
+    def get_criteria_topic_list(self):
+        topic_list = []
+        topic_list.extend(self.device_topics)
+        for criterion in self.criteria.values():
+            topic_list.append(criterion.get_topic_list())
+        return topic_list
+
+
+
 
 
 class BaseCriterion(object):
@@ -281,6 +308,9 @@ class BaseCriterion(object):
         topic = "/".join([self.logging_topic, topic])
         _log.debug("LOGGING {} - {} - {}".format(topic, value, time_stamp))
         self.parent.vip.pubsub.publish("pubsub", topic, headers, message).get()
+
+    def get_topic_lists(self):
+        return self.device_topics
 
 
 @register_criterion('status')

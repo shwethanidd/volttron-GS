@@ -644,6 +644,19 @@ class ILCAgent(Agent):
         data, meta = message
         now = parse_timestamp_string(header[headers_mod.TIMESTAMP])
         data_topics, meta_topics = self.breakout_all_publish(topic, message)
+        device_topics_dict = self.criteria_container.get_ingest_topic_dict()
+        data_t = data_topics.values()
+        for device, topics in device_topics_dict.items():
+            device_topics = {}
+            # Trim the ingest topics per device
+            data_t = data_topics.values()
+            device_t = self.intersection(topics, data_t)
+            for topic, values in data_topics.items():
+                if topic in device_t:
+                    device_topics[topic] = values
+
+
+
         self.criteria_container.ingest_data(now, data_topics)
         self.control_container.ingest_data(now, data_topics)
 
