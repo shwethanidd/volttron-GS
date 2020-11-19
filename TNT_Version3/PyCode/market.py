@@ -167,6 +167,14 @@ class Market(object):
         current_time = Timer.get_cur_time()
         _log.debug("Market method: {}, current_time: {}".format(self.method, current_time))
 
+        reconcile_start_time = self.marketClearingTime + self.deliveryLeadTime \
+                               + self.intervalsToClear * self.intervalDuration
+        _log.debug("Market method: {}, self.marketClearingTime: {}, self.deliveryLeadTime: {}, self.intervalsToClear: {}, self.intervalDuration: {}".format(self.name,
+                                                                                                                                                            self.marketClearingTime,
+                                                                                                                                                            self.deliveryLeadTime,
+                                                                                                                                                            self.intervalsToClear,
+                                                                                                                                                            self.intervalDuration))
+
         # EVENT 1A: % A NEW MARKET OBJECT BECOMES ACTIVE ***************************************************************
         # This is the instantiation of a market object in market state "Active." This transition occurs at a time when
         # a new market object is needed, as specified relative to its market clearing time. Specifically, a new market
@@ -1440,47 +1448,47 @@ class Market(object):
 
                 marginal_price_list.extend(marginal_prices)  # marginal prices [$/kWh]
 
-        _log.debug("market name {}  sum_vertices: 1 c")
+        #_log.debug("market name {}  sum_vertices: 1 c")
         for i in range(len(my_transactive_node.localAssets)):
-            _log.debug("market name {} sum_vertices: 2 a")
+            #_log.debug("market name {} sum_vertices: 2 a")
             # Change the reference to the corresponding local asset model
             asset = my_transactive_node.localAssets[i]  # a local asset model
 
             # Jump out of this iteration if local asset model nm happens to be
             # the "object to exclude"
             if object_to_exclude is not None and asset == object_to_exclude:
-                _log.debug("market name {} sum_vertices: 2 exclude")
+                #_log.debug("market name {} sum_vertices: 2 exclude")
                 continue
 
             # Find the local asset model's active vertices in this time interval.
             interval_values = find_objs_by_ti(asset.activeVertices, time_interval)
 
             if len(interval_values) > 0:
-                _log.debug("market name {} sum_vertices: 2 b")
+                #_log.debug("market name {} sum_vertices: 2 b")
                 # At least one active vertex was found in the time interval. Extract the vertices from the interval
                 # values.
                 vertices = [x.value for x in interval_values]  #
-                _log.debug("market name {} sum_vertices: 2 c")
+                #_log.debug("market name {} sum_vertices: 2 c")
                 # Extract the marginal prices from the vertices.
                 if len(vertices) == 1:
-                    _log.debug("market name {} sum_vertices: 2 d")
+                    #_log.debug("market name {} sum_vertices: 2 d")
                     # There is one vertex. This means the power is constant for this local asset. Enforce the policy of
                     # assigning infinite marginal price to constant vertices.
                     marginal_prices = [float("inf")]  # [$/kWh]
 
                 else:
-                    _log.debug("market name {} sum_vertices: 2 e")
+                    #_log.debug("market name {} sum_vertices: 2 e")
                     # There are multiple vertices. Use the marginal price values from the vertices themselves.
                     marginal_prices = [x.marginalPrice for x in vertices]  # marginal prices [$/kWh]
 
-                _log.debug("market name {} sum_vertices: 2 f")
+                #_log.debug("market name {} sum_vertices: 2 f")
                 marginal_price_list.extend(marginal_prices)  # [$/kWh]
 
         # A list of vertex marginal prices have been created.
-        _log.debug("market name {} sum_vertices: 3")
+        #_log.debug("market name {} sum_vertices: 3 marginal_price_list: {}".format(self.name, marginal_price_list))
         # Sort the marginal prices from least to greatest.
         marginal_price_list.sort()  # [$/kWh]
-        _log.debug("market name {} sum_vertices: 4 len of marginal_price_list: {}".format(self.name, len(marginal_price_list)))
+        #_log.debug("market name {} sum_vertices: 4 len of marginal_price_list: {}".format(self.name, len(marginal_price_list)))
         # Ensure that no more than two vertices will be created at the same marginal price. The third output of function
         # unique() is useful here because it is the index of unique entries in the original vector.
         # [~, ~, ind] = unique(mps)  # index of unique vector contents
@@ -1489,11 +1497,11 @@ class Market(object):
         # two-duplicates rule. The vector is padded with zeros, which should be computationally efficient. A counter is
         # used and should be incremented with new vector entries.
         if len(marginal_price_list) >= 3:
-            _log.debug("market name {} sum_vertices: 5 a".format(self.name))
+            #_log.debug("market name {} sum_vertices: 5 a".format(self.name))
             marginal_price_list_new = [marginal_price_list[0],
                                        marginal_price_list[1]]
         else:
-            _log.debug("market name {} sum_vertices: 5 b".format(self.name))
+            #_log.debug("market name {} sum_vertices: 5 b".format(self.name))
             marginal_price_list_new = list(marginal_price_list)
 
         # Index through the indices and append the new list only when there are fewer than three duplicates.
@@ -1512,26 +1520,26 @@ class Market(object):
         #             MARGINAL PRICE. OTHERWISE, INFINITY MARGINAL PRICES ARE TRIMMED FROM THE SET.
         marginal_price_list = [marginal_price_list_new[0]]
         for i in range(1, len(marginal_price_list_new)):
-            _log.debug("market name {} sum_vertices: 7 a".format(self.name))
+            #_log.debug("market name {} sum_vertices: 7 a".format(self.name))
             if marginal_price_list_new[i] != float('inf'):
                 marginal_price_list.append(marginal_price_list_new[i])
 
         # A clean list of marginal prices has been created
-        _log.debug("market name {} sum_vertices: 8".format(self.name))
+        #_log.debug("market name {} sum_vertices: 8".format(self.name))
         # Correct assignment of vertex power requires a small offset of any duplicate values. Index through the new list
         # of marginal prices again.
         for i in range(1, len(marginal_price_list)):
-            _log.debug("market name {} sum_vertices: 9 a".format(self.name))
+            #_log.debug("market name {} sum_vertices: 9 a".format(self.name))
             if marginal_price_list[i] == marginal_price_list[i - 1]:
                 # A duplicate has been found. Offset the first of the two by a very small number.
                 marginal_price_list[i - 1] = marginal_price_list[i - 1] - 1e-10  # [$/kWh]
 
         # Create vertices at the marginal prices. Initialize the list of vertices.
         vertices = []
-        _log.debug("market name {} sum_vertices: 9 b".format(self.name))
+        #_log.debug("market name {} sum_vertices: 9 b".format(self.name))
         # Index through the cleaned list of marginal prices
         for i in range(len(marginal_price_list)):
-            _log.debug("market name {} sum_vertices: 10 a".format(self.name))
+            #_log.debug("market name {} sum_vertices: 10 a".format(self.name))
             # Create a vertex at the indexed marginal price value
             interval_value = Vertex(marginal_price_list[i], 0, 0)
 

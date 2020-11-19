@@ -101,7 +101,7 @@ class Auction(Market):
 
         # Set the auction convergence flag false prior to the Negotiation market state.
         self.converged = False
-        _log.debug("Market name: {} transition_from_active_to_negotiation".format(self.name))
+        #_log.debug("Market name: {} transition_from_active_to_negotiation".format(self.name))
         # In an auction, each asset is called upon once per market clearing time to schedule its power.
         for x in range(len(my_transactive_node.localAssets)):
             local_asset = my_transactive_node.localAssets[x]  # the indexed local asset
@@ -117,8 +117,8 @@ class Auction(Market):
                                    my_transactive_node.localAssets[x].name)
             msg = local_asset.getDict()
             headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
-            _log.debug(
-                "AUCTION:transition_from_active_to_negotiation: {} and info: {}".format(topic, msg))
+            #_log.debug(
+            #    "AUCTION:transition_from_active_to_negotiation: {} and info: {}".format(topic, msg))
             my_transactive_node.vip.pubsub.publish("pubsub",topic, headers, msg)
 
         return None
@@ -134,7 +134,7 @@ class Auction(Market):
         """
         # This logic is only meaningful before the market convergence flag is set true.
         if self.converged is False:
-            _log.debug("Market name: {} while_in_negotiation. Checking asset powers have been scheduled".format(self.name))
+            #_log.debug("Market name: {} while_in_negotiation. Checking asset powers have been scheduled".format(self.name))
             # An Auction should check that all LocalAsset objects have finished scheduling their powers.
             all_calculated = True
             for x in range(len(my_transactive_node.localAssets)):
@@ -146,7 +146,7 @@ class Auction(Market):
             # If, in fact, all the assets have scheduled their powers, the auction market has nothing left to do within
             # the Negotiation market state, and the market convergence flag is set true.
             if all_calculated is True:
-                _log.debug("Market name: {} while_in_negotiation. ALL ASSETS HAVE BEEN SCHEDULED".format(self.name))
+                #_log.debug("Market name: {} while_in_negotiation. ALL ASSETS HAVE BEEN SCHEDULED".format(self.name))
                 topics = []
 
                 headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
@@ -156,8 +156,8 @@ class Auction(Market):
                                        local_asset.name)
                 msg = local_asset.getDict()
                 headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
-                _log.debug(
-                    "AUCTION:while_in_negotiation: {} and info: {}".format(topic, msg))
+                #_log.debug(
+                #    "AUCTION:while_in_negotiation: {} and info: {}".format(topic, msg))
                 my_transactive_node.vip.pubsub.publish("pubsub", topic, headers, msg)
 
                 self.converged = True
@@ -173,7 +173,7 @@ class Auction(Market):
         :param my_transactive_node: my transactive node agent object
         :return: None
         """
-        _log.debug("Market name: {} while_in_market_lead.".format(self.name))
+        #_log.debug("Market name: {} while_in_market_lead.".format(self.name))
         # TODO: This could use a convergence flag logic to assert that all bids are received and offers sent.
         # Identify the set of neighbor agents that are identified as "upstream" and "downstream".
 
@@ -197,7 +197,7 @@ class Auction(Market):
         # only after all bids have been received from downstream agents (and from local assets, of course):
         all_received = True                                                 # a local flag to this method
 
-        _log.debug("Market name: {} while_in_market_lead. Trying to publish neighbor info".format(self.name))
+        #_log.debug("Market name: {} while_in_market_lead. Trying to publish neighbor info".format(self.name))
         self.publish_records(my_transactive_node, upstream_agents, downstream_agents)
 
         # Index through the downstream agents.
@@ -219,9 +219,9 @@ class Auction(Market):
             # If any time intervals are found to be missing for this downstream agent,
             if len(missing_interval_names):
                 all_received = False
-                _log.info("Market name: {} missing_interval_names: NAME: {}, missing_interval_names: {}".format(self.name,
-                                                                                                                downstream_agent.name,
-                                                                                                                missing_interval_names))
+                #_log.info("Market name: {} while_in_market_lead downstream_agent NAME: {}, missing_interval_names: {}".format(self.name,
+                #                                                                                                downstream_agent.name,
+                #                                                                                                missing_interval_names))
                 # and call on the downstream agent model to try and receive the signal again:
                 downstream_agent.receive_transactive_signal(my_transactive_node, downstream_agent.receivedCurves)
 
@@ -250,8 +250,8 @@ class Auction(Market):
                 upstream_agent = upstream_agents[0]                             # Clear indexing of lone upstream agent
 
                 if upstream_agent.transactive is True:
-                    _log.debug("Market name: {} while_in_market_lead calling prep_transactive_signal() on upstream agent: {}".format(self.name,
-                                                                                                                                     upstream_agent.name))
+                    #_log.debug("Market name: {} while_in_market_lead calling prep_transactive_signal() on upstream agent: {}".format(self.name,
+                    #                                                                                                                 upstream_agent.name))
                     # Call on the upstream agent model to prepare its transactive signal.
                     upstream_agent.prep_transactive_signal(self, my_transactive_node)
 
@@ -273,7 +273,7 @@ class Auction(Market):
         # that is "upstream" (i.e., toward generation).
         downstream_agents = []
         upstream_agents = []
-        # _log.debug("while_in_delivery_lead: Here 1")
+        #_log.debug("while_in_delivery_lead: Here 1")
         downstream_agents = [x for x in my_transactive_node.neighbors if x.upOrDown == Direction.downstream]
 
         upstream_agents = [x for x in my_transactive_node.neighbors if x.upOrDown == Direction.upstream]
@@ -299,7 +299,7 @@ class Auction(Market):
         upstream_agent = upstream_agents[0]
 
         if upstream_agent.transactive is True:
-            # _log.debug("while_in_delivery_lead: Here 3")
+            #_log.debug("while_in_delivery_lead: Here 3")
             # Create a list of the time interval names among the received transactive signal:
             received_time_intervals = []
 
@@ -309,14 +309,13 @@ class Auction(Market):
                 received_record = upstream_agent.receivedSignal[rts]        # the indexed received record
 
                 received_time_intervals.append(received_record.timeInterval)
-            # _log.debug("while_in_delivery_lead: Here 4")
+            #_log.debug("while_in_delivery_lead: Here 4")
             # Check whether any active market time intervals are not among the received record intervals.
             missing_time_intervals = [x.name for x in self.timeIntervals if x.name not in received_time_intervals]
 
             # If time intervals are missing among the upstream agent's transactive records,
             if missing_time_intervals:
-                #_log.debug("while_in_delivery_lead missing intervals {} in downstream bids received by upstream agents: {}".format(missing_time_intervals,
-                #                                                                                                                   upstream_agent.name))
+                #_log.debug("while_in_delivery_lead missing intervals {} in downstream bids received by upstream agents: {}".format(missing_time_intervals, upstream_agent.name))
                 all_received = False
 
                 # Call on the upstream agent model to try and receive the signal again.
@@ -328,17 +327,19 @@ class Auction(Market):
 
         if all_received is True:
             self.publish_records(my_transactive_node, upstream_agents, downstream_agents)
-            # _log.debug("while_in_delivery_lead: Here 5")
+            #_log.debug("while_in_delivery_lead: Here 5")
             # Update this Neighbor's active vertices, which is entirely completed from its recently received transactive
             # signal and its records.
+            # 200702DJH: Why is this misspelling of "vertices" permitted here???????????????
+            # upstream_agent.update_verices(self) #???????????????
             upstream_agent.update_vertices(self)
-            # _log.debug("while_in_delivery_lead: Here 6")
+            #_log.debug("while_in_delivery_lead: Here 6")
             # Sum all the agent's active local asset and neighbor vertices and determine the LMP at which local power is
             # balanced.
-            # _log.debug("while_in_delivery_lead: Here 7")
+            #_log.debug("while_in_delivery_lead: Here 7")
             self.balance(my_transactive_node)
             # Have the upstream agent neighbor model now schedule its power, based on the local agent's calculated LMPs.
-            # _log.debug("while_in_delivery_lead: Here 8")
+            #_log.debug("while_in_delivery_lead: Here 8")
             upstream_agent.schedule_power(self)
             # Re-schedule local asset powers now that the local market price is cleared. This may affect flexible assets
             # if the cleared price differs from the predicted one. Inelastic assets will not be affected.
@@ -348,36 +349,64 @@ class Auction(Market):
             local_assets = [x for x in my_transactive_node.localAssets]
             for i in range(len(local_assets)):
                 local_asset = local_assets[i]
-                # _log.debug("while_in_delivery_lead: Here 9")
+                #_log.debug("while_in_delivery_lead: Here 9")
                 # local_asset.schedule_power(self) ** COMMENT OUT: TOO CUMBERSOME **
                 for time_interval in self.timeIntervals:
-                    # _log.debug("while_in_delivery_lead: Here 10")
+                    #_log.debug("while_in_delivery_lead: Here 10: local asset name: {}, time_interval: {}".format(local_asset.name,
+                    #                                                                                             time_interval.startTime))
                     price = [x.value for x in self.marginalPrices if x.timeInterval == time_interval]
-                    # Find quantity per price
-                    power = production(local_asset, price[0], time_interval, market=self)
-                    local_asset.scheduledPowers.append(IntervalValue(calling_object=self,
-                                                                     time_interval=time_interval,
-                                                                     market=self,
-                                                                     measurement_type=MeasurementType.ScheduledPower,
-                                                                     value=power
-                                                                     )
-                                                       )
+                    power = production(local_asset, price[0], time_interval)
+                    # 201012DJH: Shwetha discovered that teh list of powers was continuing to grow because this method
+                    #            is called multiple times. Normally, the scheduled power should already exist and can
+                    #            simply have its value changed.
+                    scheduled_power = [x for x in local_asset.scheduledPowers if x.timeInterval == time_interval]
+                    if len(scheduled_power) == 0:
+                        local_asset.scheduledPowers.append(IntervalValue(calling_object=self,
+                                                                         time_interval=time_interval,
+                                                                         market=self,
+                                                                         measurement_type=
+                                                                            MeasurementType.ScheduledPower,
+                                                                         value=power
+                                                                         )
+                                                           )
+                    elif len(scheduled_power) == 1:
+                        scheduled_power[0].value = power
+                    else:
+                        scheduled_power[0].value = power
+                        warn('A duplicate scheduled power was found for asset ' + str(local_asset.name)
+                             + ' in time interval ' + str(time_interval.name))
 
             # For each downstream agent,
             for x in range(len(downstream_agents)):
-                # _log.debug("while_in_delivery_lead: Here 11")
+                #_log.debug("while_in_delivery_lead: Here 11")
                 downstream_agent = downstream_agents[x] # the indexed downstream agent
 
                 # 201731DJH: Now that the LMP has been determined, power may be scheduled for this downstream neighbor.
                 downstream_agent.schedule_power(self)
-                # _log.debug("while_in_delivery_lead: Here 12")
+                #_log.debug("while_in_delivery_lead: Here 12")
                 # prepare an aggregated offer for the downstream agent,
                 downstream_agent.prep_transactive_signal(self, my_transactive_node)
                 # and send it a transactive signal (i.e., an offer).
-                # _log.debug("SN: while_in_delivery_lead() DOWNSTREAM_AGENT PUBLISH TOPIC: {}".format(downstream_agent.publishTopic))
-                # _log.debug("SN: while_in_delivery_lead() sending transactive signal to downstream agent: {}".format(downstream_agent.name))
+                _log.debug("SN: while_in_delivery_lead() DOWNSTREAM_AGENT PUBLISH TOPIC: {}".format(downstream_agent.publishTopic))
+                _log.debug("SN: while_in_delivery_lead() sending transactive signal to downstream agent: {}".format(downstream_agent.name))
                 downstream_agent.send_transactive_signal(self, my_transactive_node,
                                                          downstream_agent.publishTopic)
+
+    def transition_from_delivery_lead_to_delivery(self, my_transactive_node):
+        """
+        :param my_transactive_node: transactive node object--this agent
+        :return: None
+        """
+        _log.debug("transition_from_delivery_lead_to_delivery")
+        super(Auction, self).transition_from_delivery_lead_to_delivery(my_transactive_node)
+        headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
+        msg = dict()
+        msg['tnt_market_name'] = self.name
+        my_transactive_node.vip.pubsub.publish(peer='pubsub',
+                                               topic=my_transactive_node.market_balanced_price_topic,
+                                               headers=headers,
+                                               message=msg)
+        return None
 
     def publish_records(self, my_transactive_node, upstream_agents, downstream_agents):
         for agt in upstream_agents:
@@ -386,8 +415,8 @@ class Auction(Market):
             msg = agt.getDict()
 
             headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
-            _log.debug("AUCTION: Publishing on Upstream agent topic: {} and info: {}".format(topic,
-                                                                                          msg))
+            #_log.debug("AUCTION: Publishing on Upstream agent topic: {} and info: {}".format(topic,
+            #                                                                              msg))
             my_transactive_node.vip.pubsub.publish(peer='pubsub', topic=topic,
                                                    headers=headers, message=msg)
 
@@ -395,11 +424,11 @@ class Auction(Market):
             topic = "{}/{}".format(my_transactive_node.neighbor_topic, agt.name)
             msg = agt.getDict()
             headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
-            _log.debug("AUCTION: Publishing on Downstream agent topic: {} and info: {}".format(topic,
-                                                                                          msg))
+            #_log.debug("AUCTION: Publishing on Downstream agent topic: {} and info: {}".format(topic,
+            #                                                                              msg))
             my_transactive_node.vip.pubsub.publish(peer='pubsub', topic=topic,
                                                    headers=headers, message=msg)
 
         my_transactive_node.vip.pubsub.publish("pubsub", my_transactive_node.market_topic, headers, msg)
-        _log.debug("AUCTION: Publishing on market topic: {} and info: {}".format(
-            my_transactive_node.market_topic, msg))
+        #_log.debug("AUCTION: Publishing on market topic: {} and info: {}".format(
+        #    my_transactive_node.market_topic, msg))

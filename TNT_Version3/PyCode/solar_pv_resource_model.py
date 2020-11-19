@@ -92,8 +92,8 @@ class SolarPvResource(LocalAsset, object):
 
         # Gather active time intervals
         time_intervals = market.timeIntervals
-        _log.debug("solar_pv_resource_model: Market: {} time_intervals len: {}".format(market.name,
-                                                                                            len(market.timeIntervals)))
+        #_log.debug("solar_pv_resource_model: Market: {} time_intervals len: {}".format(market.name,
+        #                                                                                    len(market.timeIntervals)))
 
         # Index through the active time intervals ti
         for i in range(len(time_intervals)):
@@ -167,10 +167,11 @@ class SolarPvResource(LocalAsset, object):
         self.engagementSchedule = [x for x in self.engagementSchedule if x.timeInterval in time_intervals]
         self.scheduleCalculated = True
         _log.debug("Market: {} schedule_power {}".format(market.name, self.scheduledPowers))
-        for power in self.scheduledPowers:
+        '''for power in self.scheduledPowers:
             _log.debug("schedule_power Market {}, time interval: {}, power value: {} ".format(power.market.name,
                                                                                               power.timeInterval.startTime,
                                                                                               power.value))
+        '''
 
         # Remove any extra engagement schedule values
         # 200929DJH: In Version 3, this is problematic because valid scheduled engagements can exist in other markets

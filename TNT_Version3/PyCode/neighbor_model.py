@@ -872,8 +872,12 @@ class Neighbor(object):
             # Check to see if the neighbor has a scheduled power in this time interval.
             # Note that this logic may be turned off by simply setting property demandRate = 0.
             if self.demandRate != 0:
+                # 201009DJH: I found this error in these commented lines. The conditional is trying to compare a string
+                # and time interval object. How was this permitted by PyCharm?
+                # current_scheduled_power = [x.value for x in self.scheduledPowers
+                #                            if x.timeInterval.name == time_interval]
                 current_scheduled_power = [x.value for x in self.scheduledPowers
-                                           if x.timeInterval.name == time_interval]
+                                           if x.timeInterval == time_interval]
                 if current_scheduled_power is not None and len(current_scheduled_power) != 0:
                     active_threshold = max(active_threshold, current_scheduled_power[0])
                 active_vertices = self.include_demand_charges(vertices=active_vertices, threshold=active_threshold)
@@ -1379,6 +1383,15 @@ class Neighbor(object):
                                      )
             _log.debug("prep_transactive_signal 4a end")
 
+        # 201013DJH: Trim the list of transactive records in mySignal if they reference time intervals that are no
+        #            longer in active markets.
+        all_markets = [x for x in this_transactive_node.markets]
+        valid_time_interval_names = []
+        for i in range(len(all_markets)):
+            valid_time_interval_names.extend([x.name for x in all_markets[i].timeIntervals])
+        self.mySignal = [x for x in self.mySignal
+                                            if x.timeInterval in valid_time_interval_names]
+
     def send_transactive_signal(self, market, this_transactive_node, topic, start_of_cycle=False, fail_to_converged=False):
         # Send transactive records to a transactive neighbor.
         #
@@ -1450,28 +1463,21 @@ class Neighbor(object):
                          'No signal is read.')
             return
 
+        # 201013DJH: The neighbor's list of received transactive records must be reinitialized so that it will not grow
+        #            indefinitely. Only the latest records are relevant. See the end of method prep_transactive_signal()
+        #            if more sophistication is warranted.
         self.receivedSignal = []
-        if curves is None:
-            _log.debug("receive_transactive_signal: curves is None {}".format(this_transactive_node.name))
-            return
-
-        for curve in curves:
-            _log.debug("receive_transactive_signal: name: {}, curve:{}".format(this_transactive_node.name, curve))
-            transactive_record = TransactiveRecord(time_interval=curve['timeInterval'],
-                                                      record=int(curve['record']),
-                                                      marginal_price=float(curve['marginalPrice']),
-                                                      power=float(curve['power']),
-                                                      cost=float(curve['cost']))
-
-            # Publish transactive record to be stored in historian
-            # topic = this_transactive_node.transactive_record_topic
-            # msg = transactive_record.getDict()
-            # headers = {headers_mod.DATE: format_timestamp(Timer.get_cur_time())}
-            # this_transactive_node.vip.pubsub.publish(peer='pubsub',topic=topic, headers=headers, message=msg)
-
-            # Save each transactive record
-            self.receivedSignal.append(transactive_record)
-
+        if curves is not None:
+            for curve in curves:
+                self.receivedSignal.append(TransactiveRecord(time_interval=curve['timeInterval'],
+                                                             record=int(curve['record']),
+                                                             marginal_price=float(curve['marginalPrice']),
+                                                             power=float(curve['power']),
+                                                             cost=float(curve['cost'])
+                                                             )
+                                           )
+        else:
+            _log.error("receive_transactive_signal: curves is None")
 
     def update_costs(self, market):
         """

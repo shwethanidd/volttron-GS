@@ -113,7 +113,7 @@ class BulkSupplier_dc(Neighbor):
         # formulation is intended for importation (power>0) from an electricity supplier. Warn the user and return if
         # the maximum power is negative.
         if maximum_power < 0 or minimum_power < 0:
-            Warning('You should not use neighbor object ' + self.name
+            _log.warning('You should not use neighbor object ' + self.name
                     + ' with class BulkSupplier_DC that represents a bulk supplier.')
             return
 
@@ -165,10 +165,11 @@ class BulkSupplier_dc(Neighbor):
             # Make sure that the demand_rate is set to the current demand rate.
             self.demandRate = bpa_demand_rate[month_number - 1][0]
 
-            _log.debug("UV: active_threshold: {}, demandRate: {}".format(active_threshold, self.demandRate))
+            '''_log.debug("UV: active_threshold: {}, demandRate: {}".format(active_threshold, self.demandRate))
             _log.debug("UV: time interval: {}".format(time_interval.startTime))
             for x in vertices:
                 _log.debug("UV: ({}, {}, {})".format(x.record, x.marginalPrice, x.power))
+            '''
             # Demand Charges only apply to HLH hours.
             if is_heavyloadhour(time_interval.startTime) and self.demandRate != 0:
                 scheduled_power = [x.value for x in self.scheduledPowers if x.timeInterval == time_interval]

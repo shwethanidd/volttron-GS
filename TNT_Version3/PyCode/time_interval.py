@@ -103,7 +103,10 @@ class TimeInterval(object):
         self.startTime = start_time  # datetime(st)
 
         # NAME
-        self.name = format_ts(self.startTime)
+        # 201009DJH: In Version 3, where there can be multiple simultaneous time intervals, let's try appending the
+        #            market name to make sure the time interval is unique to its market.
+        # self.name = helpers.format_ts(self.startTime)
+        self.name = str(self.market.marketSeriesName) + ":" + format_ts(self.startTime)
 
         # RECONCILED - reconciliation flag for possible future use
         self.reconciled = False
@@ -176,6 +179,14 @@ class TimeInterval(object):
                                 )
             """
 #            _log.log(logging.ERROR, 'Invalid TimeInterval market state: TimeInterval ' + self.name)
+
+    def getDict(self):
+        time_interval_dict = {
+            "startTime": self.startTime,
+            "name": self.name,
+            "duration": self.duration
+        }
+        return time_interval_dict
 
 
 if __name__ == '__main__':

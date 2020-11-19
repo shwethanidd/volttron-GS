@@ -252,6 +252,8 @@ class LocalAsset(object):
             #   default_value = self.default_powers[i] if self.default_powers[i] is not None else self.defaultPower
 
             if iv is None:  # A scheduled power does not exist for the indexed time interval
+                _log.debug("schedule_power Market {}, time interval: {}, iv is None".format(market.name,
+                                                                                         time_interval.startTime))
                 # Create an interval value and assign the default value
                 iv = IntervalValue(self, time_interval, market, MeasurementType.ScheduledPower, default_value)
 

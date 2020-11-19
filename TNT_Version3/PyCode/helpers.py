@@ -90,12 +90,12 @@ def get_duration_in_hour(dur):
 
 
 def find_objs_by_ti(items, ti):
-    found_items = [x for x in items if x.timeInterval.startTime == ti.startTime]
+    found_items = [x for x in items if x.timeInterval == ti]
     return found_items
 
 
 def find_obj_by_ti(items, ti):
-    found_items = [x for x in items if x.timeInterval.startTime == ti.startTime]
+    found_items = [x for x in items if x.timeInterval == ti]
     return found_items[0] if len(found_items) > 0 else None
 
 
